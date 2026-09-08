@@ -9,13 +9,6 @@ import {
   polygonPoints,
   type Vertex,
 } from "./geometry";
-  centroidOf,
-  clickPercent,
-  findPlayDrop,
-  nearVertex,
-  polygonPoints,
-  type Vertex,
-} from "./geometry";
 
 const DEFAULT_MAP = "/maps/island.png";
 
