@@ -93,6 +93,8 @@ function ActivityFeed({
     </section>
   );
 }
+
+function formatUptime(ms: number | null): string {
   if (ms == null) return "—";
   const minutes = Math.floor(ms / 60000);
   if (minutes < 60) return `${minutes} min`;
