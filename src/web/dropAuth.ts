@@ -11,6 +11,7 @@ const OAUTH_COOKIE = "drop_oauth";
 export type MapAccess = {
   userId: string;
   teamName: string;
+  fortniteNick: string;
   dropped: boolean;
   canClaim: boolean;
   isStaff: boolean;
@@ -148,29 +149,33 @@ export async function resolveMapAccess(
     return { ok: false, status: 403, error: "Mapa indisponível agora." };
   }
   const guild = await client.guilds.fetch(scrim.guildId).catch(() => null);
-  const member = await guild?.members.fetch(userId).catch(() => null);
-  if (!member) {
-    return { ok: false, status: 403, error: "Você não está no servidor desta scrim." };
-  }
+  const member = await guild?.members
+    .fetch({ user: userId, force: true })
+    .catch(() => null);
 
-  const roleIds = [...member.roles.cache.keys()];
-  const hasCheckin = roleIds.includes(scrim.discord.registeredRoleId);
+  const invite = listInvites(scrim.id).find((item) => item.discordUserId === userId);
+  const roleIds = member ? [...member.roles.cache.keys()] : [];
+  const hasCheckinRole = roleIds.includes(scrim.discord.registeredRoleId);
   const isStaff = scrim.staffRoleIds.some((id) => roleIds.includes(id));
-  if (!hasCheckin && !isStaff) {
+  const onList = Boolean(invite);
+
+  if (!onList && !hasCheckinRole && !isStaff) {
     return {
       ok: false,
       status: 403,
-      error: "Só quem tem o cargo de check-in desta scrim pode abrir o mapa.",
+      error: member
+        ? "Só quem fez check-in nesta scrim pode abrir o mapa."
+        : "Você não está no servidor desta scrim.",
     };
   }
 
-  const invite = listInvites(scrim.id).find((item) => item.discordUserId === userId);
-  if (!hasCheckin && isStaff) {
+  if (!onList && isStaff) {
     return {
       ok: true,
       access: {
         userId,
         teamName: "Staff",
+        fortniteNick: "Staff",
         dropped: true,
         canClaim: false,
         isStaff: true,
@@ -186,6 +191,7 @@ export async function resolveMapAccess(
     access: {
       userId,
       teamName: invite.teamName,
+      fortniteNick: invite.fortniteNick || invite.displayName,
       dropped: invite.dropped,
       canClaim: Boolean(scrim.dropsOpen),
       isStaff: false,

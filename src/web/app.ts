@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getBotStatus, getDiscordClient } from "../bot/client.js";
-import { getGuild, listBotGuilds, notifyInvite, resolveDiscordPlayer } from "../bot/guild.js";
+import { getGuild, listBotGuilds, notifyInvite, resolveDiscordPlayer, rosterForScrim } from "../bot/guild.js";
 import { env } from "../env.js";
 import { DEFAULT_MAP_URL, saveUploadedMap, uploadDir } from "../scrims/maps.js";
 import {
@@ -20,6 +20,7 @@ import {
   refreshLeaveMessage,
   setDropMarkingOpen,
   setFillChatOpen,
+  syncLobbyAccess,
   teardownLobby,
 } from "../scrims/lobby.js";
 import {
@@ -323,15 +324,30 @@ export async function createWebApp() {
     }
   });
 
-  app.get("/api/scrims/:id", requireAuth, (req, res) => {
+  app.get("/api/scrims/:id", requireAuth, async (req, res) => {
     const scrim = getScrim(String(req.params.id));
     if (!scrim) {
       res.status(404).json({ error: "Scrim não encontrada" });
       return;
     }
+    const client = getDiscordClient();
+    if (client?.isReady() && scrim.discord) {
+      await syncLobbyAccess(client, scrim).catch(() => undefined);
+    }
+    const invites = listInvites(scrim.id);
+    const roster =
+      client?.isReady() && scrim.guildId
+        ? await rosterForScrim(client, scrim.guildId, invites)
+        : invites.map((invite) => ({
+            ...invite,
+            username: invite.displayName,
+            avatarUrl: "",
+            highestRoleName: "—",
+            highestRoleColor: "#6b7280",
+          }));
     res.json({
       scrim: { ...scrim, teamSize: MODE_SIZE[scrim.mode], teamCount: teamCount(scrim.id) },
-      invites: listInvites(scrim.id),
+      invites: roster,
     });
   });
 
@@ -532,6 +548,19 @@ export async function createWebApp() {
       dropped: access.access.dropped,
       canClaim: access.access.canClaim,
       dropsOpen: scrim.dropsOpen,
+      fortniteNick: access.access.fortniteNick,
+      steps: access.access.isStaff
+        ? []
+        : access.access.dropped
+          ? [
+              "Drop confirmado.",
+              "No Discord você já deve ver o canal de código e o getting-off.",
+            ]
+          : [
+              "Clique na área ou no nome do POI.",
+              "Confirme o drop.",
+              "Depois disso o Discord libera código e getting-off.",
+            ],
     });
   });
 

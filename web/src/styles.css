@@ -573,11 +573,39 @@ select:focus {
   pointer-events: none;
 }
 
+.map-board.play .drop-poly,
+.map-board.play .drop-poly-hit,
+.map-board.play .drop-hit {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
 .drop-poly {
   fill: rgba(59, 130, 246, 0.28);
   stroke: #60a5fa;
   stroke-width: 0.35;
-  transition: fill 0.25s var(--ease), stroke 0.25s var(--ease);
+  transition: fill 0.25s var(--ease), stroke 0.25s var(--ease), opacity 0.25s var(--ease);
+}
+
+.drop-poly.idle {
+  animation: poi-breathe 2.2s ease-in-out infinite;
+}
+
+@keyframes poi-breathe {
+  0%,
+  100% {
+    fill: rgba(59, 130, 246, 0.2);
+  }
+  50% {
+    fill: rgba(59, 130, 246, 0.42);
+  }
+}
+
+.drop-poly-hit {
+  fill: transparent;
+  stroke: none;
+  pointer-events: fill;
+  cursor: pointer;
 }
 
 .drop-poly.kind-contested {
@@ -621,9 +649,26 @@ select:focus {
   fill: rgba(59, 130, 246, 0.4);
 }
 
+.drop-hit.idle {
+  animation: poi-ring 1.8s ease-out infinite;
+}
+
+@keyframes poi-ring {
+  0% {
+    stroke-opacity: 1;
+  }
+  70% {
+    stroke-opacity: 0.25;
+  }
+  100% {
+    stroke-opacity: 1;
+  }
+}
+
 .drop-poly.selected {
   stroke: #fff;
-  stroke-width: 0.55;
+  stroke-width: 0.7;
+  filter: drop-shadow(0 0 0.8px #fff);
 }
 
 .draft-line {
@@ -816,6 +861,124 @@ select:focus {
 
 .player-map .hint {
   margin: 0 0 16px;
+}
+
+.map-brief {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.map-brief article {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.map-brief label {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.map-brief b {
+  font-size: 15px;
+}
+
+.map-steps {
+  margin: 0 0 16px;
+  padding: 12px 12px 12px 32px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(59, 130, 246, 0.28);
+  border-radius: 12px;
+}
+
+.map-steps li {
+  margin: 4px 0;
+}
+
+.just-claimed .map-card {
+  animation: claim-flash 0.85s var(--ease);
+}
+
+@keyframes claim-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.55);
+  }
+  100% {
+    box-shadow: var(--shadow);
+  }
+}
+
+.confirm-pop {
+  animation: fade-up 0.28s var(--ease);
+}
+
+.roster {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+}
+
+.roster li {
+  display: grid;
+  grid-template-columns: 44px 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.roster-face {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--line);
+}
+
+.roster-face.empty {
+  display: block;
+  background: #1a1a22;
+}
+
+.roster-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.roster-body span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.roster-role {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .map-brief {
+    grid-template-columns: 1fr;
+  }
+
+  .roster li {
+    grid-template-columns: 44px 1fr;
+  }
+
+  .roster-role,
+  .roster li .btn {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 
 .player-layout {

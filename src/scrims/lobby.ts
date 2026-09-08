@@ -58,9 +58,17 @@ export function registrationEmbed(scrim: Scrim, guild: Guild) {
 
   return new EmbedBuilder()
     .setColor(0x3ee0a2)
-    .setTitle("Times registrados:")
+    .setTitle("Check-in da closed")
     .setDescription(
-      `${lines.join("\n")}\n\n**${teams}/${scrim.maxSlots}** times na lista fechada.`,
+      [
+        `${lines.join("\n")}`,
+        "",
+        `**${teams}/${scrim.maxSlots}** times na lista.`,
+        "",
+        "Clique em **Registrar** (só você vê a confirmação).",
+        "Depois do check-in você libera **chat** + **dropmap**.",
+        "Código da partida e getting-off só depois de **marcar o drop** no mapa.",
+      ].join("\n"),
     )
     .setFooter({ text: scrim.name });
 }
@@ -77,7 +85,7 @@ export function registrationRow(scrimId: string) {
 export function leaveEmbed(scrim: Scrim) {
   const description = scrim.leaveUntil
     ? `Saída livre até **${scrim.leaveUntil}** (horário de Brasília).\nDepois disso, confirmar a saída gera **ban da closed** (blacklist). Punição: **${scrim.punishHours}h**.`
-    : "A staff ainda **não definiu** o horário de checkout.\nSaída livre até o horário ser postado no painel da scrim. Depois disso, confirmar a saída gera **ban da closed**.";
+    : "A staff ainda **não definiu** o horário de checkout.\nEste canal só aparece depois de marcar o drop no mapa.";
   return new EmbedBuilder()
     .setColor(0xff5c5c)
     .setTitle("Sair da scrim")
@@ -206,11 +214,11 @@ export async function provisionLobby(client: Client, scrim: Scrim): Promise<Scri
     ...staffOverwrites,
   ]);
   const chat = await makeText(`${prefix}-chat`, [
-    roleView(confirmed.id, true),
+    roleView(registered.id, true),
     ...staffOverwrites,
   ]);
   const leave = await makeText(`${prefix}-getting-off`, [
-    roleView(registered.id, false),
+    roleView(confirmed.id, false),
     ...staffOverwrites,
   ]);
   const fill = await makeText(`${prefix}-fill-requests`, [...staffOverwrites]);
@@ -253,6 +261,7 @@ export async function provisionLobby(client: Client, scrim: Scrim): Promise<Scri
     },
   });
   const withDrop = await ensureDropMapEmbed(client, withIds);
+  await syncLobbyAccess(client, withDrop).catch(() => undefined);
   await fill.send({
     embeds: [
       new EmbedBuilder()
@@ -287,18 +296,27 @@ function dropMapPayload(scrim: Scrim) {
     embeds: [
       new EmbedBuilder()
         .setColor(open ? 0x3b82f6 : 0x111111)
-        .setTitle("Marcar drop")
+        .setTitle(open ? "Marque seu drop no mapa" : "Marcação fechada")
         .setDescription(
           open
-            ? `Link **único** para todo mundo que fez check-in.\nEntre com o Discord — só entra quem tem o cargo desta scrim.\nO mapa atualiza ao vivo.`
-            : "A staff **fechou** a marcação de drops. Você ainda pode abrir o mapa para ver as marcações.",
+            ? [
+                "Depois do check-in, este é o **único** passo obrigatório.",
+                "",
+                "1. Clique em **Abrir mapa** e entre com o **mesmo Discord**.",
+                "2. Passe o mouse nas áreas, clique no POI e **confirme**.",
+                "3. Só depois disso o Discord libera os canais de **código** e **getting-off**.",
+                "",
+                "O mapa atualiza ao vivo. Você pode trocar o drop até a staff fechar.",
+              ].join("\n")
+            : "A staff **fechou** a marcação. Quem já marcou continua vendo o mapa ao vivo. Canais de código e getting-off só para quem já confirmou o drop.",
         )
-        .setURL(url),
+        .setURL(url)
+        .setFooter({ text: scrim.name }),
     ],
     components: [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
-          .setLabel(open ? "Abrir mapa" : "Ver mapa")
+          .setLabel(open ? "Abrir mapa e marcar drop" : "Ver mapa ao vivo")
           .setStyle(ButtonStyle.Link)
           .setURL(url),
       ),
@@ -338,6 +356,38 @@ export async function setDropMarkingOpen(
   return ensureDropMapEmbed(client, updated);
 }
 
+export async function syncLobbyAccess(client: Client, scrim: Scrim): Promise<void> {
+  if (!scrim.discord) {
+    return;
+  }
+  const guild = getGuild(client, scrim.guildId);
+  if (!guild) {
+    return;
+  }
+  const staffOverwrites = scrim.staffRoleIds.map((roleId) => roleView(roleId, true));
+  const registered = roleView(scrim.discord.registeredRoleId, false);
+  const registeredChat = roleView(scrim.discord.registeredRoleId, true);
+  const confirmed = roleView(scrim.discord.confirmedRoleId, false);
+
+  const apply = async (channelId: string, extra: OverwriteResolvable[]) => {
+    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel || channel.isDMBased() || !("permissionOverwrites" in channel)) {
+      return;
+    }
+    await channel.permissionOverwrites.set([
+      everyoneDeny(guild),
+      botAllow(guild, client),
+      ...staffOverwrites,
+      ...extra,
+    ]);
+  };
+
+  await apply(scrim.discord.dropmapId, [registered]);
+  await apply(scrim.discord.chatId, [registeredChat]);
+  await apply(scrim.discord.codeId, [confirmed]);
+  await apply(scrim.discord.leaveId, [confirmed]);
+}
+
 export async function applyPlayerDrop(
   client: Client,
   scrimId: string,
@@ -353,7 +403,7 @@ export async function applyPlayerDrop(
     throw new Error("A staff fechou a marcação de drops");
   }
   const guild = await client.guilds.fetch(scrim.guildId);
-  const marker = await guild.members.fetch(userId).catch(() => null);
+  const marker = await guild.members.fetch({ user: userId, force: true }).catch(() => null);
   const drop = claimDrop(scrimId, dropId, invite.teamName, {
     userId,
     displayName: marker?.displayName || invite.displayName,
@@ -367,11 +417,27 @@ export async function applyPlayerDrop(
       await member.roles.add(scrim.discord.confirmedRoleId).catch(() => undefined);
     }
   }
+  await syncLobbyAccess(client, scrim).catch(() => undefined);
   if (marker) {
+    const codeMention = `<#${scrim.discord.codeId}>`;
+    const leaveMention = `<#${scrim.discord.leaveId}>`;
     await marker
-      .send(
-        `Drop confirmado: **${drop.name}** na scrim **${scrim.name}**.\nTime: **${invite.teamName}**\nMapa ao vivo: ${dropMapUrl(scrim.id)}`,
-      )
+      .send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x3ee0a2)
+            .setTitle("Drop confirmado")
+            .setDescription(
+              [
+                `**${drop.name}** na scrim **${scrim.name}**`,
+                `Time / nick: **${invite.teamName}**`,
+                "",
+                `Agora você vê ${codeMention} e ${leaveMention}.`,
+                `Mapa: ${dropMapUrl(scrim.id)}`,
+              ].join("\n"),
+            ),
+        ],
+      })
       .catch(() => undefined);
   }
   return drop;

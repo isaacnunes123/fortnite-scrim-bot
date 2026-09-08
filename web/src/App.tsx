@@ -724,9 +724,56 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
         </button>
       </form>
 
-      {teams.length === 0 ? (
-        <p className="muted">Nenhum convite ainda.</p>
+      <h3>Check-ins</h3>
+      <p className="muted">
+        Discord, foto, ID, nick (apelido / Fortnite), horário de check-in e cargo mais alto no
+        servidor. {invites.filter((item) => item.dropped).length}/{invites.length} já marcaram drop.
+      </p>
+      {invites.length === 0 ? (
+        <p className="muted">Nenhum check-in ainda.</p>
       ) : (
+        <ul className="roster">
+          {invites
+            .slice()
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+            .map((member) => (
+              <li key={member.id}>
+                {member.avatarUrl ? (
+                  <img src={member.avatarUrl} alt="" className="roster-face" />
+                ) : (
+                  <span className="roster-face empty" />
+                )}
+                <div className="roster-body">
+                  <strong>
+                    {member.displayName}{" "}
+                    <span className="muted">@{member.username || member.displayName}</span>
+                  </strong>
+                  <span>
+                    Nick Fortnite: <b>{member.fortniteNick || member.displayName}</b>
+                  </span>
+                  <span>
+                    ID <code>{member.discordUserId}</code> · check-in{" "}
+                    {new Date(member.createdAt).toLocaleString("pt-BR", {
+                      timeZone: "America/Sao_Paulo",
+                    })}
+                    {member.dropped ? " · drop ok" : " · sem drop"}
+                  </span>
+                </div>
+                <span
+                  className="roster-role"
+                  style={{ borderColor: member.highestRoleColor || "#6b7280" }}
+                >
+                  {member.highestRoleName || "—"}
+                </span>
+                <button className="btn secondary" type="button" onClick={() => onRemove(member.id)}>
+                  Tirar
+                </button>
+              </li>
+            ))}
+        </ul>
+      )}
+
+      {teams.length === 0 ? null : (
         <div className="teams">
           {teams.map(([name, members]) => (
             <article key={name} className="team">
@@ -743,9 +790,6 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
                       {member.displayName} · {member.fortniteNick}{" "}
                       <code>{member.discordUserId}</code>
                     </span>
-                    <button className="btn secondary" type="button" onClick={() => onRemove(member.id)}>
-                      Tirar
-                    </button>
                   </li>
                 ))}
               </ul>

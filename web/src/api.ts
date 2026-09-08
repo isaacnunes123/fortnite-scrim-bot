@@ -100,6 +100,10 @@ export type Invite = {
   createdAt: string;
   dropped: boolean;
   fortniteNick: string;
+  username?: string;
+  avatarUrl?: string;
+  highestRoleName?: string;
+  highestRoleColor?: string;
 };
 
 export type BlacklistEntry = {

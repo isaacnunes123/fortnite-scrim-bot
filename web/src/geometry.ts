@@ -64,7 +64,7 @@ export function distance(a: Vertex, b: Vertex): number {
 export function findPlayDrop<T extends { x: number; y: number; vertices: Vertex[] }>(
   point: Vertex,
   drops: T[],
-  radius = 9,
+  radius = 14,
 ): T | null {
   const inside = [...drops]
     .reverse()

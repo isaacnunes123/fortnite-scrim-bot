@@ -499,16 +499,29 @@ export function markDropped(scrimId: string, discordUserId: string): Invite | nu
   return invite;
 }
 
-export function findDropAt(scrimId: string, x: number, y: number): DropSpot | null {
+export function findDropAt(scrimId: string, x: number, y: number, radius = 12): DropSpot | null {
   const scrim = getScrim(scrimId);
   if (!scrim) {
     return null;
   }
-  return (
-    [...scrim.drops]
-      .reverse()
-      .find((drop) => pointInPolygon(x, y, drop.vertices)) ?? null
-  );
+  const inside = [...scrim.drops]
+    .reverse()
+    .find((drop) => pointInPolygon(x, y, drop.vertices));
+  if (inside) {
+    return inside;
+  }
+  let best: DropSpot | null = null;
+  let bestDist = radius;
+  for (const drop of scrim.drops) {
+    const dx = drop.x - x;
+    const dy = drop.y - y;
+    const dist = Math.hypot(dx, dy);
+    if (dist <= bestDist) {
+      best = drop;
+      bestDist = dist;
+    }
+  }
+  return best;
 }
 
 export function claimDrop(
@@ -525,6 +538,9 @@ export function claimDrop(
   const drop = scrim.drops.find((item) => item.id === dropId);
   if (!drop) {
     throw new Error("Drop não existe");
+  }
+  if (drop.kind === "locked") {
+    throw new Error("Esse ponto está bloqueado");
   }
   if (drop.claimedByTeam && drop.claimedByTeam !== teamName) {
     throw new Error("Esse drop já foi pego por outro time");

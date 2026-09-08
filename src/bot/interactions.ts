@@ -12,6 +12,7 @@ import {
   refreshRegistrationMessage,
   revealFillChannel,
   ensureDropMapEmbed,
+  syncLobbyAccess,
 } from "../scrims/lobby.js";
 import {
   addBlacklist,
@@ -109,12 +110,15 @@ async function onRegisterButton(
     return;
   }
   const dropmapMention = scrim.discord ? `<#${scrim.discord.dropmapId}>` : "canal de drop map";
+  const chatMention = scrim.discord ? `<#${scrim.discord.chatId}>` : "chat";
   const already = listInvites(scrim.id).find((invite) => invite.discordUserId === member.id);
   if (already) {
-    await interaction.reply({
-      content: `Você já está registrado. Vá em ${dropmapMention} e abra o link da embed para marcar o drop.`,
-      ephemeral: true,
-    });
+    await replyOnlyToPlayer(
+      interaction,
+      member,
+      `Você já está registrado.\nAbra ${dropmapMention} e marque o drop no mapa.\nChat: ${chatMention}.\nCódigo e getting-off só depois de marcar.`,
+      { dm: false },
+    );
     return;
   }
   const gate = canRegisterNow(memberRoleIds(member), scrim);
@@ -140,6 +144,10 @@ async function onRegisterButton(
     });
     if (scrim.discord) {
       await giveRole(member, scrim.discord.registeredRoleId);
+      const live = getScrim(scrim.id);
+      if (live) {
+        await syncLobbyAccess(client, live).catch(() => undefined);
+      }
     }
     await ensureDropMapEmbed(client, getScrim(scrim.id) ?? scrim);
     await refreshRegistrationMessage(client, scrim.id);
@@ -147,13 +155,48 @@ async function onRegisterButton(
     if (updated && teamCount(updated.id) >= updated.maxSlots) {
       await revealFillChannel(client, updated);
     }
-    await interaction.reply({
-      content: `<@${member.id}> registrado. Vá em ${dropmapMention} e abra o **mesmo link** da embed para marcar o drop (ao vivo).`,
-    });
+    await replyOnlyToPlayer(
+      interaction,
+      member,
+      [
+        `Check-in feito na **${scrim.name}**.`,
+        `Nick (Fortnite / apelido): **${member.displayName}**`,
+        "",
+        `Agora você vê ${chatMention} e ${dropmapMention}.`,
+        "Abra o **mesmo link** da embed do dropmap, entre com este Discord e **marque o POI**.",
+        "Canais de **código** e **getting-off** só liberam depois do drop no mapa.",
+      ].join("\n"),
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível registrar";
     await interaction.reply({ content: message, ephemeral: true });
   }
+}
+
+async function replyOnlyToPlayer(
+  interaction: ButtonInteraction,
+  member: GuildMember,
+  content: string,
+  options?: { dm?: boolean },
+) {
+  await interaction.reply({
+    content,
+    ephemeral: true,
+    allowedMentions: { parse: [] },
+  });
+  if (options?.dm === false) {
+    return;
+  }
+  await member
+    .send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x3b82f6)
+          .setTitle("Check-in confirmado")
+          .setDescription(content),
+      ],
+    })
+    .catch(() => undefined);
 }
 
 function playerTeamName(scrimId: string, member: GuildMember): string {

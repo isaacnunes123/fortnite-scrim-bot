@@ -154,7 +154,7 @@ export function MapBoard({
                 <polygon
                   key={drop.id}
                   points={polygonPoints(drop.vertices)}
-                  className={`drop-poly kind-${drop.kind} ${drop.claimedByTeam ? "taken" : ""} ${
+                  className={`drop-poly kind-${drop.kind} ${drop.claimedByTeam ? "taken" : "idle"} ${
                     drop.claimedByTeam === myTeam ? "mine" : ""
                   } ${hoverId === drop.id || selectedId === drop.id ? "selected" : ""}`}
                 />
@@ -162,12 +162,26 @@ export function MapBoard({
             )}
             {play
               ? drops.map((drop) => (
+                  <polygon
+                    key={`${drop.id}-hit`}
+                    points={polygonPoints(drop.vertices)}
+                    className="drop-poly-hit"
+                    onMouseEnter={() => setHoverId(drop.id)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onPick?.(drop);
+                    }}
+                  />
+                ))
+              : null}
+            {play
+              ? drops.map((drop) => (
                   <g key={`${drop.id}-face`}>
                     <circle
                       cx={drop.x}
                       cy={drop.y}
-                      r={hoverId === drop.id ? 7.2 : 5.4}
-                      className={`drop-hit ${drop.claimedByTeam ? "taken" : ""} ${
+                      r={hoverId === drop.id || selectedId === drop.id ? 7.4 : 5.6}
+                      className={`drop-hit ${drop.claimedByTeam ? "taken" : "idle"} ${
                         drop.claimedByTeam === myTeam ? "mine" : ""
                       } ${hoverId === drop.id ? "hot" : ""}`}
                     />

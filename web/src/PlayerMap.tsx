@@ -7,16 +7,19 @@ export function PlayerMap() {
   const scrimId = path[2] ?? "";
   const [name, setName] = useState("");
   const [teamName, setTeamName] = useState("");
+  const [fortniteNick, setFortniteNick] = useState("");
   const [mapImageUrl, setMapImageUrl] = useState("");
   const [drops, setDrops] = useState<DropSpot[]>([]);
   const [dropped, setDropped] = useState(false);
   const [canClaim, setCanClaim] = useState(false);
   const [dropsOpen, setDropsOpen] = useState(true);
+  const [steps, setSteps] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [pending, setPending] = useState<DropSpot | null>(null);
   const [saving, setSaving] = useState(false);
+  const [flash, setFlash] = useState(false);
 
   async function load(): Promise<"ok" | "login"> {
     const response = await fetch(`/api/public/scrims/${scrimId}/map`, {
@@ -27,11 +30,13 @@ export function PlayerMap() {
       login?: boolean;
       name?: string;
       teamName?: string;
+      fortniteNick?: string;
       mapImageUrl?: string;
       drops?: DropSpot[];
       dropped?: boolean;
       canClaim?: boolean;
       dropsOpen?: boolean;
+      steps?: string[];
     };
     if (response.status === 401 && data.login) {
       window.location.assign(`/api/auth/discord?scrim=${encodeURIComponent(scrimId)}`);
@@ -42,11 +47,13 @@ export function PlayerMap() {
     }
     setName(data.name ?? "");
     setTeamName(data.teamName ?? "");
+    setFortniteNick(data.fortniteNick ?? data.teamName ?? "");
     setMapImageUrl(data.mapImageUrl ?? "");
     setDrops(data.drops ?? []);
     setDropped(Boolean(data.dropped));
     setCanClaim(Boolean(data.canClaim));
     setDropsOpen(data.dropsOpen !== false);
+    setSteps(data.steps ?? []);
     setReady(true);
     return "ok";
   }
@@ -94,12 +101,18 @@ export function PlayerMap() {
       return;
     }
     setPending(null);
-    setDone(`${drop.name} marcado para ${teamName}.`);
+    setFlash(true);
+    window.setTimeout(() => setFlash(false), 900);
+    setDone(`${drop.name} marcado. No Discord já devem aparecer código e getting-off.`);
     await load().catch(() => undefined);
   }
 
   function onPick(drop: DropSpot) {
     if (!canClaim) {
+      return;
+    }
+    if (drop.kind === "locked") {
+      setError(`${drop.name} está bloqueado nesta scrim.`);
       return;
     }
     if (drop.claimedByTeam && drop.claimedByTeam !== teamName) {
@@ -116,28 +129,51 @@ export function PlayerMap() {
 
   const mine = drops.find((drop) => drop.claimedByTeam === teamName);
   const claimed = drops.filter((drop) => drop.claimedByTeam).length;
+  const free = drops.filter((drop) => !drop.claimedByTeam && drop.kind !== "locked").length;
   const sorted = [...drops].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
   return (
-    <div className="shell player-map">
+    <div className={`shell player-map ${flash ? "just-claimed" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <strong>Marcar drop</strong>
           <span>
-            {name} · {teamName}
-            {mine ? ` · ${mine.name}` : ""} · {claimed}/{drops.length} ocupados
+            {name} · nick {fortniteNick}
+            {mine ? ` · drop ${mine.name}` : " · ainda sem drop"}
           </span>
         </div>
-        <span className="pill live">Ao vivo</span>
+        <span className="pill live">Ao vivo · {claimed}/{drops.length}</span>
       </header>
+
+      <section className="map-brief">
+        <article>
+          <label>Seu nick</label>
+          <b>{fortniteNick || teamName}</b>
+        </article>
+        <article>
+          <label>POIs livres</label>
+          <b>{free}</b>
+        </article>
+        <article>
+          <label>Status</label>
+          <b>{mine ? mine.name : dropsOpen ? "Escolha no mapa" : "Marcação fechada"}</b>
+        </article>
+      </section>
+
       {error ? <p className="error">{error}</p> : null}
       {done ? <p className="ok-text">{done}</p> : null}
       {ready && !dropsOpen ? (
-        <p className="muted hint">A staff fechou a marcação. Você ainda vê o mapa ao vivo.</p>
+        <p className="muted hint">A staff fechou a marcação. O mapa continua ao vivo.</p>
       ) : canClaim ? (
-        <p className="muted hint">
-          Clique no círculo ou no nome do POI. Pode trocar até a staff fechar.
-        </p>
+        <ol className="map-steps">
+          {(steps.length ? steps : [
+            "Clique na área iluminada ou no nome do POI.",
+            "Confirme o drop.",
+            "Depois o Discord libera código e getting-off.",
+          ]).map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
       ) : (
         <p className="muted hint">Você está vendo o mapa ao vivo, sem marcar.</p>
       )}
@@ -155,6 +191,7 @@ export function PlayerMap() {
         </div>
         <aside className="card drop-side">
           <h3>POIs</h3>
+          <p className="muted">Clique para confirmar. Avatares aparecem ao vivo.</p>
           <ul>
             {sorted.map((drop) => {
               const taken = Boolean(drop.claimedByTeam);
@@ -164,7 +201,7 @@ export function PlayerMap() {
                   <button
                     type="button"
                     className={`drop-row ${taken ? "taken" : ""} ${isMine ? "mine" : ""}`}
-                    disabled={!canClaim || (taken && !isMine)}
+                    disabled={!canClaim || (taken && !isMine) || drop.kind === "locked"}
                     onClick={() => onPick(drop)}
                   >
                     {drop.claimedByAvatarUrl ? (
@@ -175,11 +212,13 @@ export function PlayerMap() {
                     <span>
                       <strong>{drop.name}</strong>
                       <em>
-                        {isMine
-                          ? "seu drop"
-                          : taken
-                            ? drop.claimedByName || drop.claimedByTeam
-                            : "livre"}
+                        {drop.kind === "locked"
+                          ? "bloqueado"
+                          : isMine
+                            ? "seu drop"
+                            : taken
+                              ? drop.claimedByName || drop.claimedByTeam
+                              : "livre — clicar"}
                       </em>
                     </span>
                   </button>
@@ -192,15 +231,15 @@ export function PlayerMap() {
 
       {pending ? (
         <div className="confirm-scrim" role="dialog" aria-modal="true">
-          <div className="card">
-            <h3>Confirmar drop</h3>
+          <div className="card confirm-pop">
+            <h3>Confirmar {pending.name}</h3>
             <p>
-              Marcar <strong>{pending.name}</strong> para <strong>{teamName}</strong>?
-              {dropped || mine ? " Isso troca o drop anterior." : ""}
+              Marcar para <strong>{fortniteNick || teamName}</strong>?
+              {dropped || mine ? " Isso troca o drop anterior." : " Depois disso o Discord libera código e getting-off."}
             </p>
             <div className="actions">
               <button className="btn" type="button" disabled={saving} onClick={() => claim(pending)}>
-                {saving ? "Marcando…" : "Confirmar"}
+                {saving ? "Marcando…" : "Confirmar drop"}
               </button>
               <button className="btn secondary" type="button" onClick={() => setPending(null)}>
                 Cancelar

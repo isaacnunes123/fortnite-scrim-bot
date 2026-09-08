@@ -86,6 +86,41 @@ export async function notifyInvite(
   }
 }
 
+export async function rosterForScrim(
+  client: Client,
+  guildId: string,
+  invites: Array<{
+    id: string;
+    scrimId: string;
+    discordUserId: string;
+    displayName: string;
+    teamName: string;
+    createdAt: string;
+    dropped: boolean;
+    fortniteNick: string;
+  }>,
+) {
+  const guild = getGuild(client, guildId) ?? (await client.guilds.fetch(guildId).catch(() => null));
+  return Promise.all(
+    invites.map(async (invite) => {
+      const member = guild
+        ? await guild.members.fetch({ user: invite.discordUserId, force: true }).catch(() => null)
+        : null;
+      const highest = member?.roles.cache
+        .filter((role) => role.id !== guild?.id)
+        .sort((a, b) => b.position - a.position)
+        .first();
+      return {
+        ...invite,
+        username: member?.user.username ?? invite.displayName,
+        avatarUrl: member?.displayAvatarURL({ size: 64, extension: "png" }) ?? "",
+        highestRoleName: highest?.name ?? "—",
+        highestRoleColor: highest && highest.color ? highest.hexColor : "#6b7280",
+      };
+    }),
+  );
+}
+
 export async function searchGuildMembers(client: Client, query: string, guildId?: string) {
   const guild = getGuild(client, guildId);
   if (!guild || query.trim().length < 2) {
