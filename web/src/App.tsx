@@ -456,7 +456,7 @@ function Home({
             required
           />
           <p className="muted">
-            Se for 2, só 2 times podem ficar no mesmo POI. O terceiro recebe erro e não entra.
+            Se for 2, só 2 times podem ficar no mesmo drop. O terceiro recebe erro e não entra.
           </p>
           <p className="muted">Cargos da divisão (veem o check-in)</p>
           <div className="role-list">
@@ -969,7 +969,7 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
       <p className="muted">
         Preset {scrim.templateName || "fixo"} — os players marcam sozinhos ou você atribui abaixo.
         {drops.length === 0
-          ? " Este mapa ainda não tem POIs: salve o preset e recarregue esta página."
+          ? " Este mapa ainda não tem drops: salve o preset e recarregue esta página."
           : ""}
       </p>
       <MapBoard
@@ -1019,7 +1019,7 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           onChange={(event) => setAssignDropId(event.target.value)}
           required
         >
-          <option value="">POI</option>
+          <option value="">Drop</option>
           {drops.map((drop) => {
             const count = drop.claims?.length
               ? drop.claims.length
@@ -1029,7 +1029,7 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
             const limit = scrim.teamsPerDrop ?? 1;
             return (
               <option key={drop.id} value={drop.id}>
-                {drop.name} · {count}/{limit}
+                Drop {drop.name} · {count}/{limit}
                 {count >= limit ? " · cheio" : ""}
                 {drop.claimedByTeam && count === 1 ? ` · ${drop.claimedByTeam}` : ""}
               </option>

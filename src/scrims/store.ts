@@ -200,7 +200,7 @@ export function defaultEmbeds(): ScrimEmbeds {
       color: "#3b82f6",
       footer: "{name}",
       description:
-        "Depois do check-in, este é o **único** passo obrigatório.\n\n1. Clique em **Abrir mapa** e entre com o **mesmo Discord**.\n2. Passe o mouse nas áreas, clique no POI e **confirme**.\n3. Só depois disso o Discord libera **código** e **getting-off**.\n\nO mapa atualiza ao vivo. Você pode trocar o drop até a staff fechar.",
+        "Depois do check-in, este é o **único** passo obrigatório.\n\n1. Clique em **Abrir mapa** e entre com o **mesmo Discord**.\n2. Clique no drop e **confirme**.\n3. Só depois disso o Discord libera **código** e **getting-off**.\n\nO mapa atualiza ao vivo. Você pode trocar o drop até a staff fechar.",
     },
     dropmapClosed: {
       title: "Marcação fechada",
@@ -316,7 +316,7 @@ export function normalizeDrop(raw: Partial<DropSpot> & { radius?: number }): Dro
       name: String(raw.name ?? "Drop"),
       x: center.x,
       y: center.y,
-      kind: raw.kind === "contested" || raw.kind === "locked" ? raw.kind : "poi",
+      kind: "poi",
       vertices,
       claims: [],
       claimedByTeam: null,
@@ -838,9 +838,6 @@ export function claimDrop(
   const drop = scrim.drops.find((item) => item.id === dropId);
   if (!drop) {
     throw new Error("Drop não existe");
-  }
-  if (drop.kind === "locked") {
-    throw new Error(`${drop.name} está bloqueado nesta scrim`);
   }
   const limit = clampTeamsPerDrop(scrim.teamsPerDrop);
   const nextClaim: DropClaim = {

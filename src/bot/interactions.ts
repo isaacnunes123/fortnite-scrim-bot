@@ -163,7 +163,7 @@ async function onRegisterButton(
         `Nick (Fortnite / apelido): **${member.displayName}**`,
         "",
         `Agora você vê ${chatMention} e ${dropmapMention}.`,
-        "Abra o **mesmo link** da embed do dropmap, entre com este Discord e **marque o POI**.",
+        "Abra o **mesmo link** da embed do dropmap, entre com este Discord e **marque o drop**.",
         "Canais de **código** e **getting-off** só liberam depois do drop no mapa.",
       ].join("\n"),
     );

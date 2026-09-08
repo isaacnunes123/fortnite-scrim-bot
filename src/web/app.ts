@@ -677,7 +677,7 @@ export async function createWebApp() {
               "No Discord você já deve ver o canal de código e o getting-off.",
             ]
           : [
-              "Clique na área ou no nome do POI.",
+              "Clique na área ou no número do drop.",
               "Confirme o drop.",
               "Depois disso o Discord libera código e getting-off.",
             ],
@@ -707,7 +707,7 @@ export async function createWebApp() {
     }
     if (live.drops.length === 0) {
       res.status(400).json({
-        error: "Este mapa ainda não tem POIs. A staff precisa salvar o preset de mapa.",
+        error: "Este mapa ainda não tem drops. A staff precisa salvar o preset de mapa.",
       });
       return;
     }

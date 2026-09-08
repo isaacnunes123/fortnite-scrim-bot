@@ -120,10 +120,6 @@ export function PlayerMap() {
       );
       return;
     }
-    if (drop.kind === "locked") {
-      setError(`${drop.name} está bloqueado nesta scrim.`);
-      return;
-    }
     if (teamOnDrop(drop, teamName)) {
       setDone(`Você já está em ${drop.name}.`);
       setError(null);
@@ -141,10 +137,8 @@ export function PlayerMap() {
 
   const mine = drops.find((drop) => teamOnDrop(drop, teamName));
   const claimed = drops.filter((drop) => listDropClaims(drop).length > 0).length;
-  const free = drops.filter(
-    (drop) => !dropIsFull(drop, teamsPerDrop) && drop.kind !== "locked",
-  ).length;
-  const sorted = [...drops].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const free = drops.filter((drop) => !dropIsFull(drop, teamsPerDrop)).length;
+  const sorted = [...drops].sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { numeric: true }));
 
   return (
     <div className={`shell player-map ${flash ? "just-claimed" : ""}`}>
@@ -168,7 +162,7 @@ export function PlayerMap() {
           <b>{fortniteNick || teamName}</b>
         </article>
         <article>
-          <label>POIs livres</label>
+          <label>Drops livres</label>
           <b>{free}</b>
         </article>
         <article>
@@ -180,7 +174,7 @@ export function PlayerMap() {
       {error ? <p className="error">{error}</p> : null}
       {ready && drops.length === 0 ? (
         <p className="error">
-          Este mapa ainda não tem POIs. A staff precisa desenhar e salvar o preset, depois abrir
+          Este mapa ainda não tem drops. A staff precisa desenhar e salvar o preset, depois abrir
           de novo esta página.
         </p>
       ) : null}
@@ -190,7 +184,7 @@ export function PlayerMap() {
       ) : canClaim ? (
         <ol className="map-steps">
           {(steps.length ? steps : [
-            "Clique na área iluminada ou no nome do POI.",
+            "Clique na área iluminada ou no número do drop.",
             "Confirme o drop.",
             "Depois o Discord libera código e getting-off.",
           ]).map((step) => (
@@ -213,7 +207,7 @@ export function PlayerMap() {
             onMiss={() =>
               setError(
                 canClaim
-                  ? "Clique em um POI do mapa para marcar o drop."
+                  ? "Clique em um drop do mapa para marcar."
                   : dropsOpen
                     ? "Você não pode marcar drop neste mapa."
                     : "A staff fechou a marcação de drops.",
@@ -223,7 +217,7 @@ export function PlayerMap() {
           />
         </div>
         <aside className="card drop-side">
-          <h3>POIs</h3>
+          <h3>Drops</h3>
           <p className="muted">Clique para confirmar. Avatares aparecem ao vivo.</p>
           <ul>
             {sorted.map((drop) => {
@@ -243,17 +237,15 @@ export function PlayerMap() {
                       <span className="drop-row-face empty" />
                     )}
                     <span>
-                      <strong>{drop.name}</strong>
+                      <strong>Drop {drop.name}</strong>
                       <em>
-                        {drop.kind === "locked"
-                          ? "bloqueado"
-                          : isMine
-                            ? "seu drop"
-                            : full
-                              ? `cheio (${claims.length}/${teamsPerDrop})`
-                              : claims.length
-                                ? `${claims.map((claim) => claim.displayName || claim.teamName).join(" · ")} · ${claims.length}/${teamsPerDrop}`
-                                : `livre · 0/${teamsPerDrop}`}
+                        {isMine
+                          ? "seu drop"
+                          : full
+                            ? `cheio (${claims.length}/${teamsPerDrop})`
+                            : claims.length
+                              ? `${claims.map((claim) => claim.displayName || claim.teamName).join(" · ")} · ${claims.length}/${teamsPerDrop}`
+                              : `livre · 0/${teamsPerDrop}`}
                       </em>
                     </span>
                   </button>
@@ -267,7 +259,7 @@ export function PlayerMap() {
       {pending ? (
         <div className="confirm-scrim" role="dialog" aria-modal="true">
           <div className="card confirm-pop">
-            <h3>Confirmar {pending.name}</h3>
+            <h3>Confirmar drop {pending.name}</h3>
             <p>
               Marcar para <strong>{fortniteNick || teamName}</strong>?
               {dropped || mine ? " Isso troca o drop anterior." : " Depois disso o Discord libera código e getting-off."}

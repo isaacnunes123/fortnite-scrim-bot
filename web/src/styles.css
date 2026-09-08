@@ -572,12 +572,49 @@ select:focus {
   position: relative;
 }
 
+.map-zoom-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 10px;
+}
+
+.map-zoom-bar span {
+  min-width: 48px;
+  font-weight: 700;
+}
+
+.map-viewport {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #071018;
+  touch-action: none;
+  cursor: grab;
+}
+
+.map-viewport:active {
+  cursor: grabbing;
+}
+
+.map-viewport.editing,
+.map-viewport.editing:active {
+  cursor: crosshair;
+}
+
+.map-stage {
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
 .map-banner {
   position: absolute;
   top: 12px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 3;
+  z-index: 5;
   background: rgba(5, 5, 7, 0.86);
   color: #fff;
   border: 1px solid rgba(209, 0, 209, 0.55);
@@ -592,11 +629,6 @@ select:focus {
 .map-board {
   position: relative;
   width: 100%;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  overflow: hidden;
-  margin-bottom: 8px;
-  cursor: crosshair;
   user-select: none;
   background: #071018;
 }
