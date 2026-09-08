@@ -148,15 +148,16 @@ export function PlayerMap() {
           <span className="brand-copy">
             <strong>BUILD CLOSED</strong>
             <span>
-              {name} · {fortniteNick}
-              {mine ? ` · drop ${mine.name}` : " · ainda sem drop"}
+              {name ? `${name} · ` : ""}
+              {fortniteNick || teamName || "Mapa"}
+              {mine ? ` · drop ${mine.name}` : ""}
             </span>
           </span>
         </div>
-        <span className="pill live">Ao vivo · {claimed}/{drops.length}</span>
+        <span className="pill live">{claimed}/{drops.length}</span>
       </header>
 
-      <section className="map-brief">
+      <section className="map-brief desktop-only">
         <article>
           <label>Seu nick</label>
           <b>{fortniteNick || teamName}</b>
@@ -180,9 +181,9 @@ export function PlayerMap() {
       ) : null}
       {done ? <p className="ok-text">{done}</p> : null}
       {ready && !dropsOpen ? (
-        <p className="muted hint">A staff fechou a marcação. O mapa continua ao vivo.</p>
+        <p className="muted hint desktop-only">A staff fechou a marcação. O mapa continua ao vivo.</p>
       ) : canClaim ? (
-        <ol className="map-steps">
+        <ol className="map-steps desktop-only">
           {(steps.length ? steps : [
             "Clique na área iluminada ou no número do drop.",
             "Confirme o drop.",
@@ -192,9 +193,12 @@ export function PlayerMap() {
           ))}
         </ol>
       ) : (
-        <p className="muted hint">Você está vendo o mapa ao vivo, sem marcar.</p>
+        <p className="muted hint desktop-only">Você está vendo o mapa ao vivo, sem marcar.</p>
       )}
 
+      {!ready ? (
+        <p className="muted hint">Abrindo mapa…</p>
+      ) : (
       <div className="player-layout">
         <div className="card map-card">
           <MapBoard
@@ -203,6 +207,7 @@ export function PlayerMap() {
             play
             myTeam={teamName}
             occupancyLimit={teamsPerDrop}
+            compact
             onPick={onPick}
             onMiss={() =>
               setError(
@@ -216,7 +221,7 @@ export function PlayerMap() {
             selectedId={pending?.id ?? mine?.id}
           />
         </div>
-        <aside className="card drop-side">
+        <aside className="card drop-side desktop-only">
           <h3>Drops</h3>
           <p className="muted">Clique para confirmar. Avatares aparecem ao vivo.</p>
           <ul>
@@ -255,6 +260,7 @@ export function PlayerMap() {
           </ul>
         </aside>
       </div>
+      )}
 
       {pending ? (
         <div className="confirm-scrim" role="dialog" aria-modal="true">

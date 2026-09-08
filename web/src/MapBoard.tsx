@@ -36,6 +36,7 @@ export function MapBoard({
   onRemove,
   selectedId,
   occupancyLimit = 1,
+  compact,
 }: {
   imageUrl: string;
   drops: DropSpot[];
@@ -43,6 +44,7 @@ export function MapBoard({
   play?: boolean;
   myTeam?: string;
   occupancyLimit?: number;
+  compact?: boolean;
   onCreate?: (drop: Omit<DropSpot, "id" | "claimedByTeam">) => void;
   onPick?: (drop: DropSpot) => void;
   onMiss?: () => void;
@@ -57,6 +59,8 @@ export function MapBoard({
   const zoomRef = useRef(1);
   const panRef = useRef({ x: 0, y: 0 });
   const maxZoomRef = useRef(2);
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ dist: number; zoom: number } | null>(null);
   const dragRef = useRef<{
     x: number;
     y: number;
@@ -95,7 +99,11 @@ export function MapBoard({
     ctx.imageSmoothingQuality = "high";
     ctx.clearRect(0, 0, pixelW, pixelH);
     ctx.drawImage(image, 0, 0, pixelW, pixelH);
-    viewport.style.aspectRatio = `${image.naturalWidth} / ${image.naturalHeight}`;
+    if (window.innerWidth > 720) {
+      viewport.style.aspectRatio = `${image.naturalWidth} / ${image.naturalHeight}`;
+    } else {
+      viewport.style.aspectRatio = "unset";
+    }
     const nativeFit = image.naturalWidth / viewport.clientWidth;
     const nextMax = Math.min(6, Math.max(1.6, nativeFit * 1.08));
     if (Math.abs(nextMax - maxZoomRef.current) > 0.02) {
@@ -112,6 +120,7 @@ export function MapBoard({
     image.onload = () => {
       mapImageRef.current = image;
       paintMap();
+      window.setTimeout(() => fitPhoneIfNeeded(), 40);
     };
     image.src = src;
     return () => {
@@ -194,6 +203,18 @@ export function MapBoard({
     zoomAt(zoomRef.current * factor, box.left + box.width / 2, box.top + box.height / 2);
   }
 
+  function fitPhoneIfNeeded() {
+    const viewport = viewportRef.current;
+    const image = mapImageRef.current;
+    if (!viewport || !image?.naturalWidth || window.innerWidth > 720) {
+      return;
+    }
+    const fill =
+      (viewport.clientHeight / Math.max(1, viewport.clientWidth)) *
+      (image.naturalWidth / image.naturalHeight);
+    setView(Math.min(maxZoomRef.current, Math.max(1, fill * 0.96)), { x: 0, y: 0 });
+  }
+
   function pointFromEvent(event: { clientX: number; clientY: number }): Vertex | null {
     const box = boardRef.current?.getBoundingClientRect();
     if (!box) {
@@ -259,6 +280,19 @@ export function MapBoard({
     if (event.button !== 0) {
       return;
     }
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    event.currentTarget.setPointerCapture(event.pointerId);
+    if (pointersRef.current.size >= 2) {
+      const points = [...pointersRef.current.values()];
+      const a = points[0]!;
+      const b = points[1]!;
+      pinchRef.current = {
+        dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+        zoom: zoomRef.current,
+      };
+      dragRef.current = null;
+      return;
+    }
     dragRef.current = {
       x: event.clientX,
       y: event.clientY,
@@ -266,10 +300,24 @@ export function MapBoard({
       panY: panRef.current.y,
       moved: false,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (pointersRef.current.has(event.pointerId)) {
+      pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+    if (pinchRef.current && pointersRef.current.size >= 2) {
+      const points = [...pointersRef.current.values()];
+      const a = points[0]!;
+      const b = points[1]!;
+      const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+      zoomAt(
+        pinchRef.current.zoom * (dist / pinchRef.current.dist),
+        (a.x + b.x) / 2,
+        (a.y + b.y) / 2,
+      );
+      return;
+    }
     if (play) {
       const point = pointFromEvent(event);
       setHoverId(point ? findPlayDrop(point, drops)?.id ?? null : null);
@@ -280,7 +328,7 @@ export function MapBoard({
     }
     const dx = event.clientX - drag.x;
     const dy = event.clientY - drag.y;
-    if (Math.hypot(dx, dy) > 6) {
+    if (Math.hypot(dx, dy) > 8) {
       drag.moved = true;
     }
     if (drag.moved) {
@@ -289,6 +337,15 @@ export function MapBoard({
   }
 
   function onPointerUp(event: PointerEvent<HTMLDivElement>) {
+    pointersRef.current.delete(event.pointerId);
+    if (pointersRef.current.size < 2) {
+      const pinched = Boolean(pinchRef.current);
+      pinchRef.current = null;
+      if (pinched) {
+        dragRef.current = null;
+        return;
+      }
+    }
     const drag = dragRef.current;
     dragRef.current = null;
     if (!drag || drag.moved) {
@@ -308,7 +365,7 @@ export function MapBoard({
         </p>
       ) : null}
 
-      <div className="map-zoom-bar">
+      <div className={`map-zoom-bar ${compact ? "compact" : ""}`}>
         <button className="btn secondary" type="button" onClick={() => zoomBy(1 / 1.2)}>
           −
         </button>
@@ -316,13 +373,23 @@ export function MapBoard({
         <button className="btn secondary" type="button" onClick={() => zoomBy(1.2)}>
           +
         </button>
-        <button className="btn secondary" type="button" onClick={() => setView(1, { x: 0, y: 0 })}>
+        <button
+          className="btn secondary"
+          type="button"
+          onClick={() => {
+            if (window.innerWidth <= 720) {
+              fitPhoneIfNeeded();
+            } else {
+              setView(1, { x: 0, y: 0 });
+            }
+          }}
+        >
           Resetar
         </button>
-        <span className="muted">
-          Roda do mouse para ampliar. Arraste para mover. Zoom nítido até {Math.round(maxZoom * 100)}%
-          com este arquivo — para ir mais longe, envie um mapa maior em Trocar imagem (3000px+).
+        <span className="muted zoom-hint-desktop">
+          Roda do mouse para ampliar. Arraste para mover.
         </span>
+        <span className="muted zoom-hint-mobile">Dois dedos para zoom. Arraste para mover.</span>
       </div>
 
       <div className="map-frame">
@@ -331,11 +398,13 @@ export function MapBoard({
         ) : null}
         <div
           ref={viewportRef}
-          className={`map-viewport ${editor ? "editing" : ""}`}
+          className={`map-viewport ${editor ? "editing" : ""} ${compact ? "fill-height" : ""}`}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
-          onPointerCancel={() => {
+          onPointerCancel={(event) => {
+            pointersRef.current.delete(event.pointerId);
+            pinchRef.current = null;
             dragRef.current = null;
           }}
           onMouseLeave={() => setHoverId(null)}
