@@ -633,8 +633,10 @@ export async function createWebApp() {
     }
   });
 
-  if (env.isProduction) {
-    const publicDir = path.resolve(__dirname, "../public");
+  const publicDir = path.resolve(__dirname, "../public");
+  const builtUi = fs.existsSync(path.join(publicDir, "index.html"));
+
+  if (builtUi) {
     app.use(express.static(publicDir));
     app.get(/.*/, (req, res) => {
       if (req.path.startsWith("/api")) {
