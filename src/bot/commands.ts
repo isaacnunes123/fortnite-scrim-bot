@@ -9,17 +9,7 @@ import {
 } from "discord.js";
 import { env } from "../env.js";
 import { revealFillChannel, setFillChatOpen } from "../scrims/lobby.js";
-import {
-  addLog,
-  findScrimForChannel,
-  getActiveBan,
-  listInvitesForUser,
-  type Scrim,
-} from "../scrims/store.js";
-
-const scrimCommand = new SlashCommandBuilder()
-  .setName("scrim")
-  .setDescription("Ver se você está na lista fechada de uma scrim");
+import { addLog, findScrimForChannel, type Scrim } from "../scrims/store.js";
 
 const openFillCommand = new SlashCommandBuilder()
   .setName("abrirvaga")
@@ -30,7 +20,7 @@ const closeFillCommand = new SlashCommandBuilder()
   .setDescription("Mutar / bloquear pedidos de fill nesta lobby");
 
 function slashPayload() {
-  return [scrimCommand, openFillCommand, closeFillCommand].map((command) => command.toJSON());
+  return [openFillCommand, closeFillCommand].map((command) => command.toJSON());
 }
 
 export async function registerSlashCommands(client: Client): Promise<void> {
@@ -100,60 +90,35 @@ export async function handleChatCommand(
   interaction: ChatInputCommandInteraction,
   client: Client,
 ): Promise<void> {
-  if (interaction.commandName === "abrirvaga" || interaction.commandName === "fecharvaga") {
-    const member =
-      interaction.member instanceof GuildMember
-        ? interaction.member
-        : interaction.guild
-          ? await interaction.guild.members.fetch(interaction.user.id).catch(() => null)
-          : null;
-    if (!member) {
-      await interaction.reply({
-        content: "Não consegui ler seu cargo neste servidor.",
-        ephemeral: true,
-      });
-      return;
-    }
-    try {
-      const text = await toggleFillForContext(
-        client,
-        member,
-        interaction.channel,
-        interaction.commandName === "abrirvaga",
-      );
-      await interaction.reply({ content: text, ephemeral: true });
-    } catch (error) {
-      await interaction.reply({
-        content: error instanceof Error ? error.message : "Não foi possível alterar o fill.",
-        ephemeral: true,
-      });
-    }
+  if (interaction.commandName !== "abrirvaga" && interaction.commandName !== "fecharvaga") {
     return;
   }
 
-  if (interaction.commandName !== "scrim") {
-    return;
-  }
-
-  const ban = getActiveBan(interaction.user.id);
-  const banLine = ban
-    ? `⛔ Blacklist da closed até **${new Date(ban.expiresAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}** (nick **${ban.fortniteNick}**). Check-in bloqueado.\n\n`
-    : "";
-
-  const rows = listInvitesForUser(interaction.user.id);
-  if (rows.length === 0) {
+  const member =
+    interaction.member instanceof GuildMember
+      ? interaction.member
+      : interaction.guild
+        ? await interaction.guild.members.fetch(interaction.user.id).catch(() => null)
+        : null;
+  if (!member) {
     await interaction.reply({
-      content: `${banLine}Você não está em nenhuma lista fechada no momento.`,
+      content: "Não consegui ler seu cargo neste servidor.",
       ephemeral: true,
     });
     return;
   }
-
-  const lines = rows.map(
-    (row) => `• **${row.scrim.name}** — time **${row.teamName}** (${row.scrim.mode})`,
-  );
-  await interaction.reply({
-    content: `${banLine}Você está convocado:\n${lines.join("\n")}`,
-    ephemeral: true,
-  });
+  try {
+    const text = await toggleFillForContext(
+      client,
+      member,
+      interaction.channel,
+      interaction.commandName === "abrirvaga",
+    );
+    await interaction.reply({ content: text, ephemeral: true });
+  } catch (error) {
+    await interaction.reply({
+      content: error instanceof Error ? error.message : "Não foi possível alterar o fill.",
+      ephemeral: true,
+    });
+  }
 }

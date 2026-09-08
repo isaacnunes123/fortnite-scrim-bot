@@ -78,7 +78,7 @@ export async function notifyInvite(
   try {
     const user = await client.users.fetch(input.discordUserId);
     await user.send(
-      `Você foi convocado para a scrim fechada **${input.scrimName}**.\nTime: **${input.teamName}** · modo ${input.mode}\nNo servidor, use \`/scrim\` para conferir.`,
+      `Você foi convocado para a scrim fechada **${input.scrimName}**.\nTime: **${input.teamName}** · modo ${input.mode}`,
     );
     return true;
   } catch {
