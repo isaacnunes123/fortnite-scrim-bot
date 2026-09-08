@@ -1,6 +1,14 @@
 import { useRef, useState } from "react";
 import type { DropKind, DropSpot } from "./api";
+import { listDropClaims, teamOnDrop } from "./drops";
 import {
+  centroidOf,
+  clickPercent,
+  findPlayDrop,
+  nearVertex,
+  polygonPoints,
+  type Vertex,
+} from "./geometry";
   centroidOf,
   clickPercent,
   findPlayDrop,
@@ -19,16 +27,20 @@ export function MapBoard({
   myTeam,
   onCreate,
   onPick,
+  onMiss,
   onRemove,
   selectedId,
+  occupancyLimit = 1,
 }: {
   imageUrl: string;
   drops: DropSpot[];
   editor?: boolean;
   play?: boolean;
   myTeam?: string;
+  occupancyLimit?: number;
   onCreate?: (drop: Omit<DropSpot, "id" | "claimedByTeam">) => void;
   onPick?: (drop: DropSpot) => void;
+  onMiss?: () => void;
   onRemove?: (id: string) => void;
   selectedId?: string;
 }) {
@@ -57,6 +69,8 @@ export function MapBoard({
       const hit = findPlayDrop(point, drops);
       if (hit) {
         onPick?.(hit);
+      } else {
+        onMiss?.();
       }
       return;
     }
@@ -87,6 +101,7 @@ export function MapBoard({
       x: center.x,
       y: center.y,
       vertices: pending,
+      claims: [],
     });
     setDraft([]);
     setPending(null);
@@ -154,9 +169,11 @@ export function MapBoard({
                 <polygon
                   key={drop.id}
                   points={polygonPoints(drop.vertices)}
-                  className={`drop-poly kind-${drop.kind} ${drop.claimedByTeam ? "taken" : "idle"} ${
-                    drop.claimedByTeam === myTeam ? "mine" : ""
-                  } ${hoverId === drop.id || selectedId === drop.id ? "selected" : ""}`}
+                  className={`drop-poly kind-${drop.kind} ${listDropClaims(drop).length ? "taken" : "idle"} ${
+                    teamOnDrop(drop, myTeam ?? "") ? "mine" : ""
+                  } ${listDropClaims(drop).length >= occupancyLimit ? "full" : ""} ${
+                    hoverId === drop.id || selectedId === drop.id ? "selected" : ""
+                  }`}
                 />
               ) : null,
             )}
@@ -187,46 +204,66 @@ export function MapBoard({
               <polygon points={polygonPoints(pending)} className="draft-fill closed" />
             ) : null}
           </svg>
-          {drops.map((drop) =>
-            drop.claimedByTeam || drop.claimedByAvatarUrl ? (
+          {drops.flatMap((drop) =>
+            listDropClaims(drop).map((claim, index) => (
               <img
-                key={`${drop.id}-avatar`}
-                className={`drop-face ${drop.claimedByTeam === myTeam ? "mine" : ""}`}
+                key={`${drop.id}-avatar-${claim.teamName}-${index}`}
+                className={`drop-face ${claim.teamName === myTeam ? "mine" : ""}`}
                 src={
-                  drop.claimedByAvatarUrl ||
-                  `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(drop.claimedByUserId || "0") % 5n)}.png`
+                  claim.avatarUrl ||
+                  `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(claim.userId || "0") % 5n)}.png`
                 }
-                alt={drop.claimedByName || drop.claimedByTeam || "Player"}
+                alt={claim.displayName || claim.teamName}
                 referrerPolicy="no-referrer"
-                style={{ left: `${drop.x}%`, top: `${drop.y}%` }}
+                style={{
+                  left: `${drop.x}%`,
+                  top: `${drop.y}%`,
+                  transform: `translate(calc(-50% + ${index * 10}px), -120%)`,
+                }}
               />
-            ) : null,
+            )),
           )}
-          {drops.map((drop) => (
+          {drops.map((drop) => {
+            const claims = listDropClaims(drop);
+            const mine = teamOnDrop(drop, myTeam ?? "");
+            const full = claims.length >= occupancyLimit;
+            const label = claims.length
+              ? claims.length > 1
+                ? `${claims.length}/${occupancyLimit} times`
+                : claims[0]?.displayName || claims[0]?.teamName || drop.name
+              : play
+                ? "livre"
+                : drop.name;
+            return (
               <button
                 key={`${drop.id}-label`}
                 type="button"
-                className={`drop-pin kind-${drop.kind} ${drop.claimedByTeam ? "taken" : ""} ${
-                  drop.claimedByTeam === myTeam ? "mine" : ""
-                } ${play ? "clickable" : ""} ${hoverId === drop.id ? "hot" : ""}`}
+                className={`drop-pin kind-${drop.kind} ${claims.length ? "taken" : ""} ${
+                  mine ? "mine" : ""
+                } ${full ? "full" : ""} ${play ? "clickable" : ""} ${hoverId === drop.id ? "hot" : ""}`}
                 style={{ left: `${drop.x}%`, top: `${drop.y}%` }}
                 onClick={(event) => {
                   event.stopPropagation();
                   onPick?.(drop);
                 }}
               >
-                {drop.claimedByAvatarUrl ? (
+                {claims[0]?.avatarUrl ? (
                   <img
                     className="drop-pin-face"
-                    src={drop.claimedByAvatarUrl}
+                    src={claims[0].avatarUrl}
                     alt=""
                     referrerPolicy="no-referrer"
                   />
                 ) : null}
-                <b>{drop.claimedByName || drop.claimedByTeam || drop.name}</b>
-                <span>{drop.claimedByTeam ? drop.name : play ? "livre" : drop.name}</span>
+                <b>{drop.name}</b>
+                <span>
+                  {drop.kind === "locked"
+                    ? "bloqueado"
+                    : `${label}${claims.length === 1 ? ` · ${claims.length}/${occupancyLimit}` : ""}`}
+                </span>
               </button>
-            ))}
+            );
+          })}
           {draft.map((vertex, index) => (
             <span
               key={`d-${index}`}
@@ -322,7 +359,9 @@ export function MapBoard({
             <li key={drop.id}>
               <span>
                 {drop.name} · {drop.kind}
-                {drop.claimedByTeam ? ` · ${drop.claimedByTeam}` : ""}
+                {listDropClaims(drop).length
+                  ? ` · ${listDropClaims(drop).map((claim) => claim.teamName).join(", ")}`
+                  : ""}
               </span>
               <button className="btn secondary" type="button" onClick={() => onRemove?.(drop.id)}>
                 Apagar

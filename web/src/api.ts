@@ -41,6 +41,13 @@ export type DropVertex = {
   y: number;
 };
 
+export type DropClaim = {
+  teamName: string;
+  userId: string;
+  displayName: string;
+  avatarUrl: string;
+};
+
 export type DropSpot = {
   id: string;
   name: string;
@@ -48,6 +55,7 @@ export type DropSpot = {
   y: number;
   kind: DropKind;
   vertices: DropVertex[];
+  claims?: DropClaim[];
   claimedByTeam: string | null;
   claimedByUserId?: string | null;
   claimedByName?: string | null;
@@ -167,6 +175,7 @@ export type ScrimDetail = {
   guildName?: string;
   templateName?: string;
   dropsOpen?: boolean;
+  teamsPerDrop?: number;
   embeds?: ScrimEmbeds;
   discord: { lobbyNumber: number; fillChatOpen: boolean } | null;
 };

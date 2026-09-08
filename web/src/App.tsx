@@ -279,6 +279,7 @@ function Home({
   const [name, setName] = useState("");
   const [mode, setMode] = useState("trio");
   const [maxSlots, setMaxSlots] = useState(20);
+  const [teamsPerDrop, setTeamsPerDrop] = useState(1);
   const [blacklist, setBlacklist] = useState<BlacklistEntry[]>([]);
   const [templates, setTemplates] = useState<MapTemplate[]>([]);
   const [templateId, setTemplateId] = useState("");
@@ -345,6 +346,10 @@ function Home({
 
   async function onCreate(event: FormEvent) {
     event.preventDefault();
+    if (!Number.isInteger(teamsPerDrop) || teamsPerDrop < 1 || teamsPerDrop > 20) {
+      setError("Times por drop precisa ser um número de 1 a 20.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -354,6 +359,7 @@ function Home({
           name,
           mode,
           maxSlots,
+          teamsPerDrop,
           guildId,
           accessRoleIds,
           staffRoleIds,
@@ -439,6 +445,19 @@ function Home({
             onChange={(event) => setMaxSlots(Number(event.target.value))}
             required
           />
+          <label htmlFor="teams-per-drop">Times por drop</label>
+          <input
+            id="teams-per-drop"
+            type="number"
+            min={1}
+            max={20}
+            value={teamsPerDrop}
+            onChange={(event) => setTeamsPerDrop(Number(event.target.value))}
+            required
+          />
+          <p className="muted">
+            Se for 2, só 2 times podem ficar no mesmo POI. O terceiro recebe erro e não entra.
+          </p>
           <p className="muted">Cargos da divisão (veem o check-in)</p>
           <div className="role-list">
             {roles.map((role) => (
@@ -692,8 +711,13 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
   }
 
   async function onRemove(inviteId: string) {
-    await api(`/api/scrims/${id}/invites/${inviteId}`, { method: "DELETE" });
-    await load();
+    setError(null);
+    try {
+      await api(`/api/scrims/${id}/invites/${inviteId}`, { method: "DELETE" });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível remover o player");
+    }
   }
 
   async function onDelete() {
@@ -718,6 +742,7 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           <h2 style={{ margin: "16px 0 4px" }}>{scrim.name}</h2>
           <p className="muted">
             {scrim.mode} · {scrim.teamSize} por time · {scrim.teamCount}/{scrim.maxSlots} times
+            {` · ${scrim.teamsPerDrop ?? 1} time(s) por drop`}
             {scrim.discord ? ` · lobby ${scrim.discord.lobbyNumber}` : ""}
             {scrim.leaveUntil
               ? ` · checkout ${scrim.leaveUntil} · ban ${scrim.punishHours}h`
@@ -784,11 +809,17 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
         className="invite-form"
         onSubmit={async (event) => {
           event.preventDefault();
-          await api(`/api/scrims/${id}/code`, {
-            method: "POST",
-            body: JSON.stringify({ code }),
-          });
-          setNotice("Código postado no canal de code.");
+          setError(null);
+          setNotice(null);
+          try {
+            await api(`/api/scrims/${id}/code`, {
+              method: "POST",
+              body: JSON.stringify({ code }),
+            });
+            setNotice("Código postado no canal de code.");
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Não foi possível enviar o código");
+          }
         }}
       >
         <label htmlFor="code">Código da partida</label>
@@ -800,11 +831,16 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           className="btn secondary"
           type="button"
           onClick={async () => {
-            await api(`/api/scrims/${id}/fill/open`, {
-              method: "POST",
-              body: JSON.stringify({ open: true }),
-            });
-            setNotice("Fill liberado: players podem pedir vaga.");
+            setError(null);
+            try {
+              await api(`/api/scrims/${id}/fill/open`, {
+                method: "POST",
+                body: JSON.stringify({ open: true }),
+              });
+              setNotice("Fill liberado: players podem pedir vaga.");
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Não foi possível liberar o fill");
+            }
           }}
         >
           Liberar pedidos de fill
@@ -813,17 +849,22 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           className="btn secondary"
           type="button"
           onClick={async () => {
-            const open = !scrim.dropsOpen;
-            await api(`/api/scrims/${id}/drops/open`, {
-              method: "POST",
-              body: JSON.stringify({ open }),
-            });
-            setNotice(
-              open
-                ? "Marcação de drops liberada."
-                : "Marcação de drops fechada. Players ainda veem o mapa.",
-            );
-            await load();
+            setError(null);
+            try {
+              const open = !scrim.dropsOpen;
+              await api(`/api/scrims/${id}/drops/open`, {
+                method: "POST",
+                body: JSON.stringify({ open }),
+              });
+              setNotice(
+                open
+                  ? "Marcação de drops liberada."
+                  : "Marcação de drops fechada. Players ainda veem o mapa.",
+              );
+              await load();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Não foi possível alterar a marcação");
+            }
           }}
         >
           {scrim.dropsOpen ? "Parar marcação de drops" : "Liberar marcação de drops"}
@@ -931,7 +972,11 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           ? " Este mapa ainda não tem POIs: salve o preset e recarregue esta página."
           : ""}
       </p>
-      <MapBoard imageUrl={scrim.mapImageUrl || "/maps/island.png"} drops={drops} />
+      <MapBoard
+        imageUrl={scrim.mapImageUrl || "/maps/island.png"}
+        drops={drops}
+        occupancyLimit={scrim.teamsPerDrop ?? 1}
+      />
 
       <form
         className="invite-form"
@@ -975,12 +1020,21 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           required
         >
           <option value="">POI</option>
-          {drops.map((drop) => (
-            <option key={drop.id} value={drop.id}>
-              {drop.name}
-              {drop.claimedByTeam ? ` · ${drop.claimedByTeam}` : " · livre"}
-            </option>
-          ))}
+          {drops.map((drop) => {
+            const count = drop.claims?.length
+              ? drop.claims.length
+              : drop.claimedByTeam
+                ? 1
+                : 0;
+            const limit = scrim.teamsPerDrop ?? 1;
+            return (
+              <option key={drop.id} value={drop.id}>
+                {drop.name} · {count}/{limit}
+                {count >= limit ? " · cheio" : ""}
+                {drop.claimedByTeam && count === 1 ? ` · ${drop.claimedByTeam}` : ""}
+              </option>
+            );
+          })}
         </select>
         <button className="btn" type="submit" disabled={drops.length === 0 || invites.length === 0}>
           Atribuir drop

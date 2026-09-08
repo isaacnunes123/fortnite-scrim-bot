@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { DropSpot } from "./api";
+import { dropIsFull, listDropClaims, teamOnDrop } from "./drops";
 import { MapBoard } from "./MapBoard";
 
 export function PlayerMap() {
@@ -13,6 +14,7 @@ export function PlayerMap() {
   const [dropped, setDropped] = useState(false);
   const [canClaim, setCanClaim] = useState(false);
   const [dropsOpen, setDropsOpen] = useState(true);
+  const [teamsPerDrop, setTeamsPerDrop] = useState(1);
   const [steps, setSteps] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -36,6 +38,7 @@ export function PlayerMap() {
       dropped?: boolean;
       canClaim?: boolean;
       dropsOpen?: boolean;
+      teamsPerDrop?: number;
       steps?: string[];
     };
     if (response.status === 401 && data.login) {
@@ -53,6 +56,7 @@ export function PlayerMap() {
     setDropped(Boolean(data.dropped));
     setCanClaim(Boolean(data.canClaim));
     setDropsOpen(data.dropsOpen !== false);
+    setTeamsPerDrop(Math.max(1, Number(data.teamsPerDrop) || 1));
     setSteps(data.steps ?? []);
     setReady(true);
     return "ok";
@@ -109,27 +113,37 @@ export function PlayerMap() {
 
   function onPick(drop: DropSpot) {
     if (!canClaim) {
+      setError(
+        dropsOpen
+          ? "Você não pode marcar drop neste mapa."
+          : "A staff fechou a marcação de drops.",
+      );
       return;
     }
     if (drop.kind === "locked") {
       setError(`${drop.name} está bloqueado nesta scrim.`);
       return;
     }
-    if (drop.claimedByTeam && drop.claimedByTeam !== teamName) {
-      setError(`${drop.name} já foi pego por ${drop.claimedByTeam}.`);
+    if (teamOnDrop(drop, teamName)) {
+      setDone(`Você já está em ${drop.name}.`);
+      setError(null);
       return;
     }
-    if (drop.claimedByTeam === teamName) {
-      setDone(`Você já está em ${drop.name}.`);
+    if (dropIsFull(drop, teamsPerDrop, teamName)) {
+      setError(
+        `Não foi possível marcar ${drop.name}. Limite de ${teamsPerDrop} time(s) neste drop já foi atingido.`,
+      );
       return;
     }
     setError(null);
     setPending(drop);
   }
 
-  const mine = drops.find((drop) => drop.claimedByTeam === teamName);
-  const claimed = drops.filter((drop) => drop.claimedByTeam).length;
-  const free = drops.filter((drop) => !drop.claimedByTeam && drop.kind !== "locked").length;
+  const mine = drops.find((drop) => teamOnDrop(drop, teamName));
+  const claimed = drops.filter((drop) => listDropClaims(drop).length > 0).length;
+  const free = drops.filter(
+    (drop) => !dropIsFull(drop, teamsPerDrop) && drop.kind !== "locked",
+  ).length;
   const sorted = [...drops].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
   return (
@@ -163,6 +177,7 @@ export function PlayerMap() {
         </article>
       </section>
 
+      {error ? <p className="error">{error}</p> : null}
       {ready && drops.length === 0 ? (
         <p className="error">
           Este mapa ainda não tem POIs. A staff precisa desenhar e salvar o preset, depois abrir
@@ -193,7 +208,17 @@ export function PlayerMap() {
             drops={drops}
             play
             myTeam={teamName}
-            onPick={canClaim ? onPick : undefined}
+            occupancyLimit={teamsPerDrop}
+            onPick={onPick}
+            onMiss={() =>
+              setError(
+                canClaim
+                  ? "Clique em um POI do mapa para marcar o drop."
+                  : dropsOpen
+                    ? "Você não pode marcar drop neste mapa."
+                    : "A staff fechou a marcação de drops.",
+              )
+            }
             selectedId={pending?.id ?? mine?.id}
           />
         </div>
@@ -202,18 +227,18 @@ export function PlayerMap() {
           <p className="muted">Clique para confirmar. Avatares aparecem ao vivo.</p>
           <ul>
             {sorted.map((drop) => {
-              const taken = Boolean(drop.claimedByTeam);
-              const isMine = drop.claimedByTeam === teamName;
+              const claims = listDropClaims(drop);
+              const isMine = teamOnDrop(drop, teamName);
+              const full = dropIsFull(drop, teamsPerDrop, teamName);
               return (
                 <li key={drop.id}>
                   <button
                     type="button"
-                    className={`drop-row ${taken ? "taken" : ""} ${isMine ? "mine" : ""}`}
-                    disabled={!canClaim || (taken && !isMine) || drop.kind === "locked"}
+                    className={`drop-row ${claims.length ? "taken" : ""} ${isMine ? "mine" : ""}`}
                     onClick={() => onPick(drop)}
                   >
-                    {drop.claimedByAvatarUrl ? (
-                      <img src={drop.claimedByAvatarUrl} alt="" className="drop-row-face" />
+                    {claims[0]?.avatarUrl ? (
+                      <img src={claims[0].avatarUrl} alt="" className="drop-row-face" />
                     ) : (
                       <span className="drop-row-face empty" />
                     )}
@@ -224,9 +249,11 @@ export function PlayerMap() {
                           ? "bloqueado"
                           : isMine
                             ? "seu drop"
-                            : taken
-                              ? drop.claimedByName || drop.claimedByTeam
-                              : "livre — clicar"}
+                            : full
+                              ? `cheio (${claims.length}/${teamsPerDrop})`
+                              : claims.length
+                                ? `${claims.map((claim) => claim.displayName || claim.teamName).join(" · ")} · ${claims.length}/${teamsPerDrop}`
+                                : `livre · 0/${teamsPerDrop}`}
                       </em>
                     </span>
                   </button>

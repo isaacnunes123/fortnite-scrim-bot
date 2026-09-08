@@ -33,7 +33,9 @@ import {
   createTemplate,
   deleteTemplate,
   getTemplate,
+  importTemplate,
   listTemplates,
+  clampTeamsPerDrop,
   patchTemplate,
   deleteScrim,
   ensureScrimHasDrops,
@@ -175,6 +177,14 @@ export async function createWebApp() {
     res.status(201).json({ template: createTemplate(name) });
   });
 
+  app.post("/api/templates/import", requireAuth, (req, res) => {
+    try {
+      res.status(201).json({ template: importTemplate(req.body) });
+    } catch (error) {
+      fail(res, error, "Não foi possível importar o preset");
+    }
+  });
+
   app.get("/api/templates/:id", requireAuth, (req, res) => {
     const template = getTemplate(String(req.params.id));
     if (!template) {
@@ -194,6 +204,7 @@ export async function createWebApp() {
               claimedByUserId: null,
               claimedByName: null,
               claimedByAvatarUrl: null,
+              claims: [],
             }),
           )
         : undefined;
@@ -304,6 +315,7 @@ export async function createWebApp() {
       : [];
     const windows = parseWindows(req.body?.windows);
     const templateId = String(req.body?.templateId ?? "").trim();
+    const teamsPerDrop = clampTeamsPerDrop(req.body?.teamsPerDrop);
     const guildId = String(req.body?.guildId ?? "").trim();
     const clientGuild = getGuild(client, guildId);
     if (!guildId || !clientGuild) {
@@ -349,6 +361,7 @@ export async function createWebApp() {
         guildId: clientGuild.id,
         guildName: clientGuild.name,
         templateId,
+        teamsPerDrop,
       });
       const scrim = await provisionLobby(client, created);
       res.status(201).json({ scrim });
@@ -654,6 +667,7 @@ export async function createWebApp() {
       dropped: access.access.dropped,
       canClaim: access.access.canClaim,
       dropsOpen: live.dropsOpen,
+      teamsPerDrop: live.teamsPerDrop,
       fortniteNick: access.access.fortniteNick,
       steps: access.access.isStaff
         ? []

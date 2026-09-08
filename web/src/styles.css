@@ -666,6 +666,11 @@ select:focus {
   stroke: #fff;
 }
 
+.drop-poly.full {
+  fill: rgba(239, 68, 68, 0.2);
+  stroke: #ef4444;
+}
+
 .map-board.play {
   cursor: pointer;
 }
@@ -804,6 +809,10 @@ select:focus {
   background: #050507;
   color: #fff;
   border: 1px solid #fff;
+}
+
+.drop-pin.full:not(.mine) {
+  border: 1px solid #ef4444;
 }
 
 .drop-pin.mine {

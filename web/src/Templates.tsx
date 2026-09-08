@@ -48,12 +48,17 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
 
   async function onCreate(event: FormEvent) {
     event.preventDefault();
-    const created = await api<{ template: MapTemplate }>("/api/templates", {
-      method: "POST",
-      body: JSON.stringify({ name: newName || "Novo preset" }),
-    });
-    setNewName("");
-    await loadList(created.template.id);
+    setError(null);
+    try {
+      const created = await api<{ template: MapTemplate }>("/api/templates", {
+        method: "POST",
+        body: JSON.stringify({ name: newName || "Novo preset" }),
+      });
+      setNewName("");
+      await loadList(created.template.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível criar o preset");
+    }
   }
 
   function updateLocal(patch: Partial<MapTemplate>) {
@@ -101,9 +106,74 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
     if (!window.confirm("Apagar este preset?")) {
       return;
     }
-    await api(`/api/templates/${id}`, { method: "DELETE" });
-    setActiveId("");
-    await loadList();
+    setError(null);
+    try {
+      await api(`/api/templates/${id}`, { method: "DELETE" });
+      setActiveId("");
+      await loadList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível apagar o preset");
+    }
+  }
+
+  function exportJson() {
+    if (!template) {
+      setError("Abra um preset para exportar.");
+      return;
+    }
+    if (template.drops.length === 0) {
+      setError("Não dá para exportar: este preset ainda não tem drops.");
+      return;
+    }
+    const payload = {
+      version: 1,
+      kind: "build-closed-map-preset",
+      name: template.name,
+      mapImageUrl: template.mapImageUrl,
+      drops: template.drops.map((drop) => ({
+        name: drop.name,
+        kind: drop.kind,
+        x: drop.x,
+        y: drop.y,
+        vertices: drop.vertices,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const slug = template.name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "preset";
+    link.href = url;
+    link.download = `${slug}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setError(null);
+    setSaved("JSON baixado.");
+  }
+
+  async function importJson(file: File) {
+    setError(null);
+    try {
+      const text = await file.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new Error("Arquivo JSON inválido");
+      }
+      const created = await api<{ template: MapTemplate }>("/api/templates/import", {
+        method: "POST",
+        body: JSON.stringify(parsed),
+      });
+      await loadList(created.template.id);
+      setSaved("Preset importado.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível importar o JSON");
+    }
   }
 
   return (
@@ -131,6 +201,21 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
             CREATE NEW TEMPLATE
           </button>
         </form>
+        <label className="btn secondary">
+          Importar JSON
+          <input
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) {
+                void importJson(file);
+              }
+            }}
+          />
+        </label>
         <ul className="preset-list">
           {templates.map((item) => (
             <li key={item.id} className={item.id === activeId ? "active" : ""}>
@@ -174,6 +259,9 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
                   disabled={saving}
                 >
                   {saving ? "Salvando…" : "Salvar preset"}
+                </button>
+                <button className="btn secondary" type="button" onClick={exportJson}>
+                  Exportar JSON
                 </button>
               <label className="btn secondary">
                 Trocar imagem
@@ -228,6 +316,7 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
                       claimedByUserId: null,
                       claimedByName: null,
                       claimedByAvatarUrl: null,
+                      claims: [],
                     },
                   ],
                 };

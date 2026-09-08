@@ -25,6 +25,13 @@ export type DropVertex = {
   y: number;
 };
 
+export type DropClaim = {
+  teamName: string;
+  userId: string;
+  displayName: string;
+  avatarUrl: string;
+};
+
 export type DropSpot = {
   id: string;
   name: string;
@@ -32,6 +39,7 @@ export type DropSpot = {
   y: number;
   kind: DropKind;
   vertices: DropVertex[];
+  claims: DropClaim[];
   claimedByTeam: string | null;
   claimedByUserId: string | null;
   claimedByName: string | null;
@@ -101,6 +109,7 @@ export type Scrim = {
   templateId: string;
   templateName: string;
   dropsOpen: boolean;
+  teamsPerDrop: number;
   embeds: ScrimEmbeds;
 };
 
@@ -249,6 +258,49 @@ function legacySquare(x: number, y: number, radius = 3.2): Vertex[] {
   ];
 }
 
+export function listDropClaims(drop: Partial<DropSpot> | null | undefined): DropClaim[] {
+  if (!drop) {
+    return [];
+  }
+  if (Array.isArray(drop.claims) && drop.claims.length > 0) {
+    return drop.claims.map((claim) => ({
+      teamName: String(claim.teamName ?? ""),
+      userId: String(claim.userId ?? ""),
+      displayName: String(claim.displayName ?? claim.teamName ?? ""),
+      avatarUrl: String(claim.avatarUrl ?? ""),
+    }));
+  }
+  if (drop.claimedByTeam) {
+    return [
+      {
+        teamName: drop.claimedByTeam,
+        userId: String(drop.claimedByUserId ?? ""),
+        displayName: String(drop.claimedByName ?? drop.claimedByTeam),
+        avatarUrl: String(drop.claimedByAvatarUrl ?? ""),
+      },
+    ];
+  }
+  return [];
+}
+
+function applyClaims(drop: DropSpot, claims: DropClaim[]): DropSpot {
+  const first = claims[0] ?? null;
+  drop.claims = claims;
+  drop.claimedByTeam = first?.teamName ?? null;
+  drop.claimedByUserId = first?.userId ?? null;
+  drop.claimedByName = first?.displayName ?? null;
+  drop.claimedByAvatarUrl = first?.avatarUrl ?? null;
+  return drop;
+}
+
+export function clampTeamsPerDrop(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) {
+    return 1;
+  }
+  return Math.min(20, n);
+}
+
 export function normalizeDrop(raw: Partial<DropSpot> & { radius?: number }): DropSpot {
   const vertices =
     Array.isArray(raw.vertices) && raw.vertices.length >= 3
@@ -258,18 +310,22 @@ export function normalizeDrop(raw: Partial<DropSpot> & { radius?: number }): Dro
         }))
       : legacySquare(Number(raw.x ?? 50), Number(raw.y ?? 50), Number(raw.radius ?? 3.2));
   const center = centroidOf(vertices);
-  return {
-    id: String(raw.id ?? randomUUID()),
-    name: String(raw.name ?? "Drop"),
-    x: center.x,
-    y: center.y,
-    kind: raw.kind === "contested" || raw.kind === "locked" ? raw.kind : "poi",
-    vertices,
-    claimedByTeam: raw.claimedByTeam ?? null,
-    claimedByUserId: raw.claimedByUserId ?? null,
-    claimedByName: raw.claimedByName ?? null,
-    claimedByAvatarUrl: raw.claimedByAvatarUrl ?? null,
-  };
+  return applyClaims(
+    {
+      id: String(raw.id ?? randomUUID()),
+      name: String(raw.name ?? "Drop"),
+      x: center.x,
+      y: center.y,
+      kind: raw.kind === "contested" || raw.kind === "locked" ? raw.kind : "poi",
+      vertices,
+      claims: [],
+      claimedByTeam: null,
+      claimedByUserId: null,
+      claimedByName: null,
+      claimedByAvatarUrl: null,
+    },
+    listDropClaims(raw),
+  );
 }
 
 function normalizeScrim(raw: Scrim): Scrim {
@@ -295,6 +351,7 @@ function normalizeScrim(raw: Scrim): Scrim {
     templateId: raw.templateId ?? "",
     templateName: raw.templateName ?? "",
     dropsOpen: raw.dropsOpen !== false,
+    teamsPerDrop: clampTeamsPerDrop(raw.teamsPerDrop),
     embeds: normalizeEmbeds(raw.embeds),
   };
 }
@@ -305,7 +362,14 @@ function normalizeTemplate(raw: MapTemplate): MapTemplate {
     name: raw.name || "Preset",
     mapImageUrl: raw.mapImageUrl || "/maps/island.png",
     drops: (raw.drops ?? []).map((drop) =>
-      normalizeDrop({ ...drop, claimedByTeam: null }),
+      normalizeDrop({
+        ...drop,
+        claims: [],
+        claimedByTeam: null,
+        claimedByUserId: null,
+        claimedByName: null,
+        claimedByAvatarUrl: null,
+      }),
     ),
     createdAt: raw.createdAt || new Date().toISOString(),
   };
@@ -383,6 +447,7 @@ export function cloneDrops(drops: DropSpot[]): DropSpot[] {
     normalizeDrop({
       ...drop,
       id: randomUUID(),
+      claims: [],
       claimedByTeam: null,
       claimedByUserId: null,
       claimedByName: null,
@@ -412,6 +477,38 @@ export function createTemplate(name: string, mapImageUrl = "/maps/island.png"): 
   store.templates.push(template);
   persist();
   return template;
+}
+
+export function importTemplate(raw: unknown): MapTemplate {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Arquivo JSON inválido");
+  }
+  const data = raw as Record<string, unknown>;
+  if (data.kind != null && data.kind !== "build-closed-map-preset") {
+    throw new Error("Este JSON não é um preset de mapa da closed");
+  }
+  const name = String(data.name ?? "").trim();
+  if (!name) {
+    throw new Error("O JSON precisa ter um nome de preset");
+  }
+  const dropsRaw = Array.isArray(data.drops) ? data.drops : [];
+  if (dropsRaw.length === 0) {
+    throw new Error("O JSON não tem nenhum drop para importar");
+  }
+  const mapImageUrl = String(data.mapImageUrl ?? "").trim() || "/maps/island.png";
+  const template = createTemplate(name, mapImageUrl);
+  return patchTemplate(template.id, {
+    drops: dropsRaw.map((item) =>
+      normalizeDrop({
+        ...(item as Partial<DropSpot>),
+        claims: [],
+        claimedByTeam: null,
+        claimedByUserId: null,
+        claimedByName: null,
+        claimedByAvatarUrl: null,
+      }),
+    ),
+  });
 }
 
 export function patchTemplate(id: string, patch: Partial<MapTemplate>): MapTemplate {
@@ -517,6 +614,7 @@ export function createScrim(input: {
   guildId: string;
   guildName: string;
   templateId: string;
+  teamsPerDrop?: number;
 }): Scrim {
   const template = getTemplate(input.templateId);
   if (!template) {
@@ -543,6 +641,7 @@ export function createScrim(input: {
     templateId: template.id,
     templateName: template.name,
     dropsOpen: true,
+    teamsPerDrop: clampTeamsPerDrop(input.teamsPerDrop),
     embeds: defaultEmbeds(),
   };
   store.scrims.push(scrim);
@@ -741,23 +840,32 @@ export function claimDrop(
     throw new Error("Drop não existe");
   }
   if (drop.kind === "locked") {
-    throw new Error("Esse ponto está bloqueado");
+    throw new Error(`${drop.name} está bloqueado nesta scrim`);
   }
-  if (drop.claimedByTeam && drop.claimedByTeam !== teamName) {
-    throw new Error("Esse drop já foi pego por outro time");
+  const limit = clampTeamsPerDrop(scrim.teamsPerDrop);
+  const nextClaim: DropClaim = {
+    teamName,
+    userId: claimant?.userId ?? "",
+    displayName: claimant?.displayName ?? teamName,
+    avatarUrl: claimant?.avatarUrl ?? "",
+  };
+  const nextById = new Map(
+    scrim.drops.map((item) => [
+      item.id,
+      listDropClaims(item).filter((claim) => claim.teamName !== teamName),
+    ]),
+  );
+  const occupying = nextById.get(drop.id) ?? [];
+  if (occupying.length >= limit) {
+    throw new Error(
+      `Este drop já tem o limite de ${limit} time(s). Não dá para entrar em ${drop.name}.`,
+    );
   }
+  occupying.push(nextClaim);
+  nextById.set(drop.id, occupying);
   for (const item of scrim.drops) {
-    if (item.claimedByTeam === teamName) {
-      item.claimedByTeam = null;
-      item.claimedByUserId = null;
-      item.claimedByName = null;
-      item.claimedByAvatarUrl = null;
-    }
+    applyClaims(item, nextById.get(item.id) ?? []);
   }
-  drop.claimedByTeam = teamName;
-  drop.claimedByUserId = claimant?.userId ?? null;
-  drop.claimedByName = claimant?.displayName ?? null;
-  drop.claimedByAvatarUrl = claimant?.avatarUrl ?? null;
   const now = new Date().toISOString();
   for (const invite of store.invites) {
     if (invite.scrimId === scrimId && invite.teamName === teamName) {
@@ -771,7 +879,7 @@ export function claimDrop(
     scrimId,
     kind: "drop",
     summary: `${claimant?.displayName || teamName} marcou ${drop.name}`,
-    detail: `Time ${teamName} · drop ${drop.name} · user ${claimant?.userId ?? "—"}`,
+    detail: `Time ${teamName} · drop ${drop.name} · ${listDropClaims(drop).length}/${limit} times`,
   });
   return drop;
 }
