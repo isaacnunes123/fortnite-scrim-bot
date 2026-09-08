@@ -1,5 +1,5 @@
 import { Client, GatewayIntentBits, Events } from "discord.js";
-import { handleChatCommand, handlePrefixCommand, registerSlashCommands } from "./commands.js";
+import { handleChatCommand, registerSlashCommands } from "./commands.js";
 import { handleInteraction } from "./interactions.js";
 
 export type BotStatus = {
@@ -49,11 +49,7 @@ export async function startBot(token: string): Promise<Client | null> {
   }
 
   const client = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.MessageContent,
-    ],
+    intents: [GatewayIntentBits.Guilds],
   });
 
   client.once(Events.ClientReady, (readyClient) => {
@@ -77,12 +73,6 @@ export async function startBot(token: string): Promise<Client | null> {
     }
     handleInteraction(interaction, client).catch((error) => {
       console.error("[bot] Erro na interação:", error);
-    });
-  });
-
-  client.on(Events.MessageCreate, (message) => {
-    handlePrefixCommand(message, client).catch((error) => {
-      console.error("[bot] Erro no comando por prefixo:", error);
     });
   });
 

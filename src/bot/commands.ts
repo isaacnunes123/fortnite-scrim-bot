@@ -5,7 +5,6 @@ import {
   GuildMember,
   type ChatInputCommandInteraction,
   type Client,
-  type Message,
   type TextBasedChannel,
 } from "discord.js";
 import { env } from "../env.js";
@@ -17,8 +16,6 @@ import {
   listInvitesForUser,
   type Scrim,
 } from "../scrims/store.js";
-
-export const COMMAND_PREFIX = ".";
 
 const scrimCommand = new SlashCommandBuilder()
   .setName("scrim")
@@ -91,7 +88,7 @@ async function toggleFillForContext(
     scrimId: scrim.id,
     kind: "fill",
     summary: open ? "Fill liberado" : "Fill bloqueado",
-    detail: `${member.displayName} usou ${open ? ".abrirvaga" : ".fecharvaga"}`,
+    detail: `${member.displayName} usou /${open ? "abrirvaga" : "fecharvaga"}`,
   });
   const mention = `<#${scrim.discord.fillId}>`;
   return open
@@ -159,34 +156,4 @@ export async function handleChatCommand(
     content: `${banLine}Você está convocado:\n${lines.join("\n")}`,
     ephemeral: true,
   });
-}
-
-export async function handlePrefixCommand(message: Message, client: Client): Promise<void> {
-  if (message.author.bot || !message.guild || !message.content.startsWith(COMMAND_PREFIX)) {
-    return;
-  }
-  const name = message.content
-    .slice(COMMAND_PREFIX.length)
-    .trim()
-    .split(/\s+/)[0]
-    ?.toLowerCase();
-  if (name !== "abrirvaga" && name !== "fecharvaga") {
-    return;
-  }
-  const member = await message.guild.members.fetch(message.author.id).catch(() => null);
-  if (!member) {
-    await message.reply("Não consegui ler seu cargo neste servidor.");
-    return;
-  }
-  try {
-    const text = await toggleFillForContext(
-      client,
-      member,
-      message.channel,
-      name === "abrirvaga",
-    );
-    await message.reply(text);
-  } catch (error) {
-    await message.reply(error instanceof Error ? error.message : "Não foi possível alterar o fill.");
-  }
 }
