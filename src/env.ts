@@ -13,7 +13,7 @@ export const env = {
   discordToken: process.env.DISCORD_TOKEN?.trim() ?? "",
   discordClientId: process.env.DISCORD_CLIENT_ID?.trim() ?? "",
   discordClientSecret: process.env.DISCORD_CLIENT_SECRET?.trim() ?? "",
-  discordGuildId: process.env.DISCORD_GUILD_ID?.trim() ?? "",
+  discordGuildId: process.env.DISCORD_GUILD_ID?.trim() || "862771292389900308",
   adminPassword: required("ADMIN_PASSWORD"),
   adminRoleIds: parseIdList(process.env.ADMIN_ROLE_IDS),
   sessionSecret: required("SESSION_SECRET"),

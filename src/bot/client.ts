@@ -1,6 +1,8 @@
 import { Client, GatewayIntentBits, Events } from "discord.js";
 import { handleChatCommand, registerSlashCommands } from "./commands.js";
 import { handleInteraction } from "./interactions.js";
+import { env } from "../env.js";
+import { enforceHomeGuild } from "./guild.js";
 
 export type BotStatus = {
   configured: boolean;
@@ -55,9 +57,19 @@ export async function startBot(token: string): Promise<Client | null> {
   client.once(Events.ClientReady, (readyClient) => {
     runtime.readyAt = Date.now();
     console.log(`[bot] Conectado como ${readyClient.user.tag}`);
-    registerSlashCommands(readyClient).catch((error) => {
-      console.error("[bot] Falha ao registrar comandos:", error);
-    });
+    enforceHomeGuild(readyClient)
+      .then(() => registerSlashCommands(readyClient))
+      .catch((error) => {
+        console.error("[bot] Falha ao registrar comandos:", error);
+      });
+  });
+
+  client.on(Events.GuildCreate, (guild) => {
+    if (guild.id === env.discordGuildId) {
+      return;
+    }
+    console.warn(`[bot] Convite em ${guild.name} ignorado — saindo`);
+    guild.leave().catch(() => undefined);
   });
 
   client.on(Events.Error, (error) => {

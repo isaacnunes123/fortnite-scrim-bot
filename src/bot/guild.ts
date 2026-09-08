@@ -1,28 +1,44 @@
 import type { Client, Guild } from "discord.js";
 import { env } from "../env.js";
 
+export function isHomeGuild(guildId: string | null | undefined): boolean {
+  return Boolean(guildId && guildId === env.discordGuildId);
+}
+
 export function getPrimaryGuild(client: Client): Guild | null {
-  if (env.discordGuildId) {
-    return client.guilds.cache.get(env.discordGuildId) ?? null;
-  }
-  return client.guilds.cache.first() ?? null;
+  return client.guilds.cache.get(env.discordGuildId) ?? null;
 }
 
 export function getGuild(client: Client, guildId?: string | null): Guild | null {
-  if (guildId) {
-    return client.guilds.cache.get(guildId) ?? null;
+  if (guildId && !isHomeGuild(guildId)) {
+    return null;
   }
   return getPrimaryGuild(client);
 }
 
 export function listBotGuilds(client: Client) {
-  return [...client.guilds.cache.values()]
-    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
-    .map((guild) => ({
-      id: guild.id,
-      name: guild.name,
-      memberCount: guild.memberCount,
-    }));
+  const home = getPrimaryGuild(client);
+  if (!home) {
+    return [];
+  }
+  return [{ id: home.id, name: home.name, memberCount: home.memberCount }];
+}
+
+export async function enforceHomeGuild(client: Client): Promise<void> {
+  for (const guild of client.guilds.cache.values()) {
+    if (guild.id === env.discordGuildId) {
+      continue;
+    }
+    console.warn(`[bot] Saindo de ${guild.name} (${guild.id}) — o bot só opera em ${env.discordGuildId}`);
+    await guild.leave().catch((error) => {
+      console.error(`[bot] Não consegui sair de ${guild.id}:`, error);
+    });
+  }
+  if (!client.guilds.cache.has(env.discordGuildId)) {
+    console.error(
+      `[bot] O bot não está no servidor ${env.discordGuildId}. Convide-o só para esse servidor.`,
+    );
+  }
 }
 
 export async function resolveDiscordPlayer(

@@ -271,7 +271,7 @@ export async function createWebApp() {
       res.status(503).json({ error: "Bot offline" });
       return;
     }
-    const guild = getGuild(client, String(req.query.guildId ?? ""));
+    const guild = getGuild(client);
     if (!guild) {
       res.json({ roles: [] });
       return;
@@ -316,10 +316,11 @@ export async function createWebApp() {
     const windows = parseWindows(req.body?.windows);
     const templateId = String(req.body?.templateId ?? "").trim();
     const teamsPerDrop = clampTeamsPerDrop(req.body?.teamsPerDrop);
-    const guildId = String(req.body?.guildId ?? "").trim();
-    const clientGuild = getGuild(client, guildId);
-    if (!guildId || !clientGuild) {
-      res.status(400).json({ error: "Escolha o servidor onde a scrim vai acontecer" });
+    const clientGuild = getGuild(client);
+    if (!clientGuild) {
+      res.status(400).json({
+        error: `O bot precisa estar no servidor ${env.discordGuildId}.`,
+      });
       return;
     }
     if (!name) {

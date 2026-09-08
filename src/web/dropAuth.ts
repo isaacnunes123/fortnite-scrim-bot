@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
 import { getDiscordClient } from "../bot/client.js";
+import { getGuild } from "../bot/guild.js";
 import { env } from "../env.js";
 import { publicBaseUrl } from "../scrims/links.js";
 import { getScrim, listInvites, addInvite, type Scrim } from "../scrims/store.js";
@@ -243,35 +244,28 @@ export async function explainAdminAccess(
     return { ok: false, reason: "Bot Discord offline no Railway. Confira DISCORD_TOKEN." };
   }
   await client.guilds.fetch().catch(() => undefined);
-  const guilds = [...client.guilds.cache.values()];
-  if (guilds.length === 0) {
-    return { ok: false, reason: "O bot não está em nenhum servidor." };
-  }
-
-  let sawMember = false;
-  const serverNames: string[] = [];
-  for (const guild of guilds) {
-    const member = await guild.members.fetch({ user: userId, force: true }).catch(() => null);
-    if (!member) {
-      continue;
-    }
-    sawMember = true;
-    serverNames.push(guild.name);
-    if (env.adminRoleIds.some((id) => member.roles.cache.has(id))) {
-      return { ok: true };
-    }
-  }
-
-  if (!sawMember) {
+  const guild = getGuild(client);
+  if (!guild) {
     return {
       ok: false,
-      reason: `Login ok, mas o bot não te encontrou nos servidores (${guilds.map((g) => g.name).join(", ")}). Entra no mesmo servidor onde o bot está, com a mesma conta Discord do login.`,
+      reason: `O bot precisa estar no servidor ${env.discordGuildId}.`,
     };
+  }
+
+  const member = await guild.members.fetch({ user: userId, force: true }).catch(() => null);
+  if (!member) {
+    return {
+      ok: false,
+      reason: `Login ok, mas o bot não te encontrou em ${guild.name}. Entra nesse servidor com a mesma conta Discord do login.`,
+    };
+  }
+  if (env.adminRoleIds.some((id) => member.roles.cache.has(id))) {
+    return { ok: true };
   }
 
   return {
     ok: false,
-    reason: `Te achei em: ${serverNames.join(", ")}. Nenhum cargo bate com ADMIN_ROLE_IDS. Copie o ID do cargo (não o nome) e cole no Railway, só números, separados por vírgula.`,
+    reason: `Te achei em ${guild.name}. Nenhum cargo bate com ADMIN_ROLE_IDS. Copie o ID do cargo (não o nome) e cole no Railway, só números, separados por vírgula.`,
   };
 }
 

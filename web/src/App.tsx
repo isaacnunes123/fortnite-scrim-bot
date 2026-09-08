@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   type BotStatus,
-  type DiscordGuild,
   type DiscordRole,
   type DropSpot,
   type BlacklistEntry,
@@ -284,8 +283,6 @@ function Home({
   const [templates, setTemplates] = useState<MapTemplate[]>([]);
   const [templateId, setTemplateId] = useState("");
   const [roles, setRoles] = useState<DiscordRole[]>([]);
-  const [guilds, setGuilds] = useState<DiscordGuild[]>([]);
-  const [guildId, setGuildId] = useState("");
   const [accessRoleIds, setAccessRoleIds] = useState<string[]>([]);
   const [staffRoleIds, setStaffRoleIds] = useState<string[]>([]);
   const [windows, setWindows] = useState<PriorityWindow[]>([
@@ -307,14 +304,6 @@ function Home({
   });
 
   useEffect(() => {
-    api<{ guilds: DiscordGuild[] }>("/api/discord/guilds")
-      .then((data) => {
-        setGuilds(data.guilds);
-        if (data.guilds[0] && !guildId) {
-          setGuildId(data.guilds[0].id);
-        }
-      })
-      .catch(() => undefined);
     api<{ templates: MapTemplate[] }>("/api/templates")
       .then((data) => {
         setTemplates(data.templates);
@@ -329,16 +318,12 @@ function Home({
   }, []);
 
   useEffect(() => {
-    if (!guildId) {
-      setRoles([]);
-      return;
-    }
     setAccessRoleIds([]);
     setStaffRoleIds([]);
-    api<{ roles: DiscordRole[] }>(`/api/discord/roles?guildId=${encodeURIComponent(guildId)}`)
+    api<{ roles: DiscordRole[] }>("/api/discord/roles")
       .then((data) => setRoles(data.roles))
       .catch(() => setRoles([]));
-  }, [guildId]);
+  }, []);
 
   function toggle(list: string[], id: string, set: (next: string[]) => void) {
     set(list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
@@ -360,7 +345,6 @@ function Home({
           mode,
           maxSlots,
           teamsPerDrop,
-          guildId,
           accessRoleIds,
           staffRoleIds,
           windows,
@@ -385,7 +369,7 @@ function Home({
           <b>{status?.username ?? "Não conectado"}</b>
         </article>
         <article className="stat">
-          <label>Servidores</label>
+          <label>Servidor</label>
           <b>{status?.guildCount ?? 0}</b>
         </article>
         <article className="stat">
@@ -406,20 +390,6 @@ function Home({
             O horário de checkout é definido depois, no painel da scrim.
           </p>
           {error ? <p className="error">{error}</p> : null}
-          <label htmlFor="guild">Servidor</label>
-          <select
-            id="guild"
-            value={guildId}
-            onChange={(event) => setGuildId(event.target.value)}
-            required
-          >
-            <option value="">Selecione o servidor</option>
-            {guilds.map((guild) => (
-              <option key={guild.id} value={guild.id}>
-                {guild.name}
-              </option>
-            ))}
-          </select>
           <label htmlFor="name">Nome</label>
           <input
             id="name"

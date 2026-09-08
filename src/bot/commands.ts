@@ -10,14 +10,17 @@ import {
 import { env } from "../env.js";
 import { revealFillChannel, setFillChatOpen } from "../scrims/lobby.js";
 import { addLog, findScrimForChannel, type Scrim } from "../scrims/store.js";
+import { isHomeGuild } from "./guild.js";
 
 const openFillCommand = new SlashCommandBuilder()
   .setName("abrirvaga")
-  .setDescription("Liberar pedidos de fill (vaga) nesta lobby");
+  .setDescription("Liberar pedidos de fill (vaga) nesta lobby")
+  .setDMPermission(false);
 
 const closeFillCommand = new SlashCommandBuilder()
   .setName("fecharvaga")
-  .setDescription("Mutar / bloquear pedidos de fill nesta lobby");
+  .setDescription("Mutar / bloquear pedidos de fill nesta lobby")
+  .setDMPermission(false);
 
 function slashPayload() {
   return [openFillCommand, closeFillCommand].map((command) => command.toJSON());
@@ -29,17 +32,16 @@ export async function registerSlashCommands(client: Client): Promise<void> {
   }
 
   const rest = new REST({ version: "10" }).setToken(env.discordToken);
-  const guilds = [...client.guilds.cache.values()];
-  if (guilds.length === 0) {
-    console.warn("[bot] Nenhum servidor para registrar comandos slash");
+  await rest.put(Routes.applicationCommands(env.discordClientId), { body: [] });
+  const guild = client.guilds.cache.get(env.discordGuildId);
+  if (!guild) {
+    console.warn(`[bot] Comandos slash não registrados: bot fora do servidor ${env.discordGuildId}`);
     return;
   }
-  for (const guild of guilds) {
-    await rest.put(Routes.applicationGuildCommands(env.discordClientId, guild.id), {
-      body: slashPayload(),
-    });
-    console.log(`[bot] Comandos slash registrados em ${guild.name}`);
-  }
+  await rest.put(Routes.applicationGuildCommands(env.discordClientId, guild.id), {
+    body: slashPayload(),
+  });
+  console.log(`[bot] Comandos slash registrados em ${guild.name}`);
 }
 
 function isFillStaff(member: GuildMember, scrim: Scrim): boolean {
@@ -62,6 +64,9 @@ async function toggleFillForContext(
 ): Promise<string> {
   if (!channel || channel.isDMBased() || !member.guild) {
     throw new Error("Use este comando no servidor, no canal da lobby.");
+  }
+  if (!isHomeGuild(member.guild.id)) {
+    throw new Error("Este bot só funciona no servidor da closed.");
   }
   const scrim = findScrimForChannel(member.guild.id, channel.id, parentIdOf(channel));
   if (!scrim?.discord) {
@@ -91,6 +96,14 @@ export async function handleChatCommand(
   client: Client,
 ): Promise<void> {
   if (interaction.commandName !== "abrirvaga" && interaction.commandName !== "fecharvaga") {
+    return;
+  }
+
+  if (!isHomeGuild(interaction.guildId)) {
+    await interaction.reply({
+      content: "Este bot só funciona no servidor da closed.",
+      ephemeral: true,
+    });
     return;
   }
 
