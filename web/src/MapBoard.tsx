@@ -12,7 +12,6 @@ import {
 
 const DEFAULT_MAP = "/maps/island.png";
 const MIN_ZOOM = 1;
-const MAX_ZOOM = 8;
 
 function nextDropName(drops: DropSpot[]): string {
   let max = 0;
@@ -50,10 +49,14 @@ export function MapBoard({
   onRemove?: (id: string) => void;
   selectedId?: string;
 }) {
+  const src = imageUrl || DEFAULT_MAP;
   const viewportRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mapImageRef = useRef<HTMLImageElement | null>(null);
   const zoomRef = useRef(1);
   const panRef = useRef({ x: 0, y: 0 });
+  const maxZoomRef = useRef(2);
   const dragRef = useRef<{
     x: number;
     y: number;
@@ -65,6 +68,70 @@ export function MapBoard({
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [maxZoom, setMaxZoom] = useState(2);
+
+  function paintMap() {
+    const canvas = canvasRef.current;
+    const image = mapImageRef.current;
+    const viewport = viewportRef.current;
+    if (!canvas || !image?.naturalWidth || !viewport?.clientWidth) {
+      return;
+    }
+    const z = zoomRef.current;
+    const cssW = viewport.clientWidth * z;
+    const cssH = (image.naturalHeight / image.naturalWidth) * cssW;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const pixelW = Math.max(1, Math.round(cssW * dpr));
+    const pixelH = Math.max(1, Math.round(cssH * dpr));
+    if (canvas.width !== pixelW || canvas.height !== pixelH) {
+      canvas.width = pixelW;
+      canvas.height = pixelH;
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.clearRect(0, 0, pixelW, pixelH);
+    ctx.drawImage(image, 0, 0, pixelW, pixelH);
+    viewport.style.aspectRatio = `${image.naturalWidth} / ${image.naturalHeight}`;
+    const nativeFit = image.naturalWidth / viewport.clientWidth;
+    const nextMax = Math.min(6, Math.max(1.6, nativeFit * 1.08));
+    if (Math.abs(nextMax - maxZoomRef.current) > 0.02) {
+      maxZoomRef.current = nextMax;
+      setMaxZoom(nextMax);
+    } else {
+      maxZoomRef.current = nextMax;
+    }
+  }
+
+  useEffect(() => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => {
+      mapImageRef.current = image;
+      paintMap();
+    };
+    image.src = src;
+    return () => {
+      image.onload = null;
+    };
+  }, [src]);
+
+  useEffect(() => {
+    paintMap();
+  }, [zoom]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    const ro = new ResizeObserver(() => paintMap());
+    ro.observe(viewport);
+    return () => ro.disconnect();
+  }, [src]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -80,7 +147,7 @@ export function MapBoard({
       const current = zoomRef.current;
       const contentX = (cx - panRef.current.x) / current;
       const contentY = (cy - panRef.current.y) / current;
-      const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, current * factor));
+      const clamped = Math.min(maxZoomRef.current, Math.max(MIN_ZOOM, current * factor));
       const nextPan =
         clamped <= MIN_ZOOM + 0.001
           ? { x: 0, y: 0 }
@@ -95,7 +162,7 @@ export function MapBoard({
   }, []);
 
   function setView(nextZoom: number, nextPan: { x: number; y: number }) {
-    const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom));
+    const clamped = Math.min(maxZoomRef.current, Math.max(MIN_ZOOM, nextZoom));
     const panValue = clamped <= MIN_ZOOM + 0.001 ? { x: 0, y: 0 } : nextPan;
     zoomRef.current = clamped;
     panRef.current = panValue;
@@ -114,7 +181,7 @@ export function MapBoard({
     const current = zoomRef.current;
     const contentX = (cx - panRef.current.x) / current;
     const contentY = (cy - panRef.current.y) / current;
-    const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom));
+    const clamped = Math.min(maxZoomRef.current, Math.max(MIN_ZOOM, nextZoom));
     setView(clamped, { x: cx - contentX * clamped, y: cy - contentY * clamped });
   }
 
@@ -231,7 +298,6 @@ export function MapBoard({
   }
 
   const showCloseHint = editor && draft.length >= 3;
-  const src = imageUrl || DEFAULT_MAP;
 
   return (
     <div className="map-editor">
@@ -253,7 +319,10 @@ export function MapBoard({
         <button className="btn secondary" type="button" onClick={() => setView(1, { x: 0, y: 0 })}>
           Resetar
         </button>
-        <span className="muted">Roda do mouse para ampliar. Arraste para mover. Quanto mais zoom, mais nítido o recorte.</span>
+        <span className="muted">
+          Roda do mouse para ampliar. Arraste para mover. Zoom nítido até {Math.round(maxZoom * 100)}%
+          com este arquivo — para ir mais longe, envie um mapa maior em Trocar imagem (3000px+).
+        </span>
       </div>
 
       <div className="map-frame">
@@ -282,21 +351,7 @@ export function MapBoard({
               ref={boardRef}
               className={`map-board ${play ? "play" : ""} ${zoom >= 1.2 ? "zoomed" : ""}`}
             >
-              <img
-                className="map-art"
-                src={src}
-                alt="Mapa da scrim"
-                draggable={false}
-                onLoad={(event) => {
-                  const image = event.currentTarget;
-                  if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-                    const viewport = viewportRef.current;
-                    if (viewport) {
-                      viewport.style.aspectRatio = `${image.naturalWidth} / ${image.naturalHeight}`;
-                    }
-                  }
-                }}
-              />
+              <canvas className="map-art" ref={canvasRef} />
               <svg className="map-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
                 {drops.map((drop) =>
                   drop.vertices.length >= 3 ? (
