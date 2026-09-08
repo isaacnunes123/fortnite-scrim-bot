@@ -588,6 +588,8 @@ select:focus {
 .map-viewport {
   position: relative;
   overflow: hidden;
+  width: 100%;
+  aspect-ratio: 4 / 3;
   border-radius: 12px;
   border: 1px solid var(--line);
   background: #071018;
@@ -633,11 +635,11 @@ select:focus {
   background: #071018;
 }
 
-.map-board img {
+.map-board > img.map-art {
   display: block;
   width: 100%;
   height: auto;
-  object-fit: contain;
+  image-rendering: auto;
 }
 
 .map-overlay {

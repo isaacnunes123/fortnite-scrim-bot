@@ -12,7 +12,7 @@ import {
 
 const DEFAULT_MAP = "/maps/island.png";
 const MIN_ZOOM = 1;
-const MAX_ZOOM = 5;
+const MAX_ZOOM = 8;
 
 function nextDropName(drops: DropSpot[]): string {
   let max = 0;
@@ -253,7 +253,7 @@ export function MapBoard({
         <button className="btn secondary" type="button" onClick={() => setView(1, { x: 0, y: 0 })}>
           Resetar
         </button>
-        <span className="muted">Roda do mouse para ampliar. Arraste para mover.</span>
+        <span className="muted">Roda do mouse para ampliar. Arraste para mover. Quanto mais zoom, mais nítido o recorte.</span>
       </div>
 
       <div className="map-frame">
@@ -273,10 +273,27 @@ export function MapBoard({
         >
           <div
             className="map-stage"
-            style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+            style={{
+              width: `${zoom * 100}%`,
+              transform: `translate(${pan.x}px, ${pan.y}px)`,
+            }}
           >
             <div ref={boardRef} className={`map-board ${play ? "play" : ""}`}>
-              <img src={src} alt="Mapa da scrim" draggable={false} />
+              <img
+                className="map-art"
+                src={src}
+                alt="Mapa da scrim"
+                draggable={false}
+                onLoad={(event) => {
+                  const image = event.currentTarget;
+                  if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+                    const viewport = viewportRef.current;
+                    if (viewport) {
+                      viewport.style.aspectRatio = `${image.naturalWidth} / ${image.naturalHeight}`;
+                    }
+                  }
+                }}
+              />
               <svg className="map-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
                 {drops.map((drop) =>
                   drop.vertices.length >= 3 ? (
