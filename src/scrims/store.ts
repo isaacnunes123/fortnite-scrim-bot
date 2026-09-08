@@ -571,6 +571,32 @@ export function getScrim(id: string): Scrim | null {
   return scrim ? normalizeScrim(scrim) : null;
 }
 
+export function findScrimForChannel(
+  guildId: string,
+  channelId: string,
+  parentId?: string | null,
+): Scrim | null {
+  const inGuild = listScrims().filter((scrim) => scrim.guildId === guildId && scrim.discord);
+  const hit = inGuild.find((scrim) => {
+    const discord = scrim.discord!;
+    const ids = [
+      discord.categoryId,
+      discord.registrationId,
+      discord.dropmapId,
+      discord.codeId,
+      discord.chatId,
+      discord.leaveId,
+      discord.fillId,
+      discord.adminId,
+    ];
+    return ids.includes(channelId) || discord.categoryId === parentId;
+  });
+  if (hit) {
+    return hit;
+  }
+  return inGuild.length === 1 ? inGuild[0]! : null;
+}
+
 export function ensureScrimHasDrops(scrimId: string): Scrim | null {
   const scrim = getScrim(scrimId);
   if (!scrim) {

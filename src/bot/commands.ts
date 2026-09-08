@@ -2,15 +2,39 @@ import {
   REST,
   Routes,
   SlashCommandBuilder,
+  GuildMember,
   type ChatInputCommandInteraction,
   type Client,
+  type Message,
+  type TextBasedChannel,
 } from "discord.js";
 import { env } from "../env.js";
-import { getActiveBan, listInvitesForUser } from "../scrims/store.js";
+import { revealFillChannel, setFillChatOpen } from "../scrims/lobby.js";
+import {
+  addLog,
+  findScrimForChannel,
+  getActiveBan,
+  listInvitesForUser,
+  type Scrim,
+} from "../scrims/store.js";
+
+export const COMMAND_PREFIX = ".";
 
 const scrimCommand = new SlashCommandBuilder()
   .setName("scrim")
   .setDescription("Ver se você está na lista fechada de uma scrim");
+
+const openFillCommand = new SlashCommandBuilder()
+  .setName("abrirvaga")
+  .setDescription("Liberar pedidos de fill (vaga) nesta lobby");
+
+const closeFillCommand = new SlashCommandBuilder()
+  .setName("fecharvaga")
+  .setDescription("Mutar / bloquear pedidos de fill nesta lobby");
+
+function slashPayload() {
+  return [scrimCommand, openFillCommand, closeFillCommand].map((command) => command.toJSON());
+}
 
 export async function registerSlashCommands(client: Client): Promise<void> {
   if (!env.discordToken || !env.discordClientId) {
@@ -20,20 +44,96 @@ export async function registerSlashCommands(client: Client): Promise<void> {
   const rest = new REST({ version: "10" }).setToken(env.discordToken);
   const guilds = [...client.guilds.cache.values()];
   if (guilds.length === 0) {
-    console.warn("[bot] Nenhum servidor para registrar /scrim");
+    console.warn("[bot] Nenhum servidor para registrar comandos slash");
     return;
   }
   for (const guild of guilds) {
     await rest.put(Routes.applicationGuildCommands(env.discordClientId, guild.id), {
-      body: [scrimCommand.toJSON()],
+      body: slashPayload(),
     });
-    console.log(`[bot] Comando /scrim registrado em ${guild.name}`);
+    console.log(`[bot] Comandos slash registrados em ${guild.name}`);
   }
+}
+
+function isFillStaff(member: GuildMember, scrim: Scrim): boolean {
+  const allowed = new Set([...scrim.staffRoleIds, ...env.adminRoleIds]);
+  return member.roles.cache.some((role) => allowed.has(role.id));
+}
+
+function parentIdOf(channel: TextBasedChannel): string | null {
+  if ("parentId" in channel && typeof channel.parentId === "string") {
+    return channel.parentId;
+  }
+  return null;
+}
+
+async function toggleFillForContext(
+  client: Client,
+  member: GuildMember,
+  channel: TextBasedChannel | null,
+  open: boolean,
+): Promise<string> {
+  if (!channel || channel.isDMBased() || !member.guild) {
+    throw new Error("Use este comando no servidor, no canal da lobby.");
+  }
+  const scrim = findScrimForChannel(member.guild.id, channel.id, parentIdOf(channel));
+  if (!scrim?.discord) {
+    throw new Error("Não achei a scrim deste canal. Use no fill, admin ou outro canal da lobby.");
+  }
+  if (!isFillStaff(member, scrim)) {
+    throw new Error("Só staff desta scrim pode liberar ou mutar o fill.");
+  }
+  if (open) {
+    await revealFillChannel(client, scrim);
+  }
+  await setFillChatOpen(client, scrim, open);
+  addLog({
+    scrimId: scrim.id,
+    kind: "fill",
+    summary: open ? "Fill liberado" : "Fill bloqueado",
+    detail: `${member.displayName} usou ${open ? ".abrirvaga" : ".fecharvaga"}`,
+  });
+  const mention = `<#${scrim.discord.fillId}>`;
+  return open
+    ? `Fill liberado em ${mention}. Players já podem pedir vaga.`
+    : `Fill mutado em ${mention}. Pedidos de vaga estão bloqueados.`;
 }
 
 export async function handleChatCommand(
   interaction: ChatInputCommandInteraction,
+  client: Client,
 ): Promise<void> {
+  if (interaction.commandName === "abrirvaga" || interaction.commandName === "fecharvaga") {
+    const member =
+      interaction.member instanceof GuildMember
+        ? interaction.member
+        : interaction.guild
+          ? await interaction.guild.members.fetch(interaction.user.id).catch(() => null)
+          : null;
+    if (!member) {
+      await interaction.reply({
+        content: "Não consegui ler seu cargo neste servidor.",
+        ephemeral: true,
+      });
+      return;
+    }
+    try {
+      const text = await toggleFillForContext(
+        client,
+        member,
+        interaction.channel,
+        interaction.commandName === "abrirvaga",
+      );
+      await interaction.reply({ content: text, ephemeral: true });
+    } catch (error) {
+      await interaction.reply({
+        content: error instanceof Error ? error.message : "Não foi possível alterar o fill.",
+        ephemeral: true,
+      });
+    }
+    return;
+  }
+
   if (interaction.commandName !== "scrim") {
     return;
   }
@@ -59,4 +159,34 @@ export async function handleChatCommand(
     content: `${banLine}Você está convocado:\n${lines.join("\n")}`,
     ephemeral: true,
   });
+}
+
+export async function handlePrefixCommand(message: Message, client: Client): Promise<void> {
+  if (message.author.bot || !message.guild || !message.content.startsWith(COMMAND_PREFIX)) {
+    return;
+  }
+  const name = message.content
+    .slice(COMMAND_PREFIX.length)
+    .trim()
+    .split(/\s+/)[0]
+    ?.toLowerCase();
+  if (name !== "abrirvaga" && name !== "fecharvaga") {
+    return;
+  }
+  const member = await message.guild.members.fetch(message.author.id).catch(() => null);
+  if (!member) {
+    await message.reply("Não consegui ler seu cargo neste servidor.");
+    return;
+  }
+  try {
+    const text = await toggleFillForContext(
+      client,
+      member,
+      message.channel,
+      name === "abrirvaga",
+    );
+    await message.reply(text);
+  } catch (error) {
+    await message.reply(error instanceof Error ? error.message : "Não foi possível alterar o fill.");
+  }
 }
