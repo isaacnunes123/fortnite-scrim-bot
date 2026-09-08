@@ -160,7 +160,12 @@ export function PlayerMap() {
         </article>
       </section>
 
-      {error ? <p className="error">{error}</p> : null}
+      {ready && drops.length === 0 ? (
+        <p className="error">
+          Este mapa ainda não tem POIs. A staff precisa desenhar e salvar o preset, depois abrir
+          de novo esta página.
+        </p>
+      ) : null}
       {done ? <p className="ok-text">{done}</p> : null}
       {ready && !dropsOpen ? (
         <p className="muted hint">A staff fechou a marcação. O mapa continua ao vivo.</p>

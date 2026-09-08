@@ -393,13 +393,14 @@ export async function applyPlayerDrop(
   scrimId: string,
   userId: string,
   dropId: string,
+  options?: { ignoreClosed?: boolean },
 ) {
   const scrim = getScrim(scrimId);
   const invite = listInvites(scrimId).find((item) => item.discordUserId === userId);
   if (!scrim?.discord || !invite) {
     throw new Error("Você não está registrado nesta scrim");
   }
-  if (!scrim.dropsOpen) {
+  if (!scrim.dropsOpen && !options?.ignoreClosed) {
     throw new Error("A staff fechou a marcação de drops");
   }
   const guild = await client.guilds.fetch(scrim.guildId);

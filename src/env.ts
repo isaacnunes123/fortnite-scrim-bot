@@ -19,6 +19,9 @@ export const env = {
   sessionSecret: required("SESSION_SECRET"),
   port: Number(process.env.PORT ?? 3000),
   isProduction: process.env.NODE_ENV === "production",
+  cookieSecure:
+    process.env.NODE_ENV === "production" ||
+    (process.env.PUBLIC_BASE_URL ?? "").startsWith("https://"),
 };
 
 function parseIdList(raw: string | undefined): string[] {

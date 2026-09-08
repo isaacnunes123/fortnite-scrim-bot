@@ -32,6 +32,7 @@ import {
   listTemplates,
   patchTemplate,
   deleteScrim,
+  ensureScrimHasDrops,
   findDropAt,
   getActiveBan,
   getScrim,
@@ -75,8 +76,9 @@ function parseWindows(raw: unknown): PriorityWindow[] {
 
 export async function createWebApp() {
   const app = express();
+  app.set("trust proxy", 1);
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "2mb" }));
+  app.use(express.json({ limit: "8mb" }));
   app.use(cookieParser(env.sessionSecret));
   app.use("/uploads", express.static(uploadDir));
 
@@ -106,7 +108,7 @@ export async function createWebApp() {
       httpOnly: true,
       signed: true,
       sameSite: "lax",
-      secure: env.isProduction,
+      secure: env.cookieSecure,
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
     res.json({ ok: true });
@@ -325,7 +327,7 @@ export async function createWebApp() {
   });
 
   app.get("/api/scrims/:id", requireAuth, async (req, res) => {
-    const scrim = getScrim(String(req.params.id));
+    const scrim = ensureScrimHasDrops(String(req.params.id)) ?? getScrim(String(req.params.id));
     if (!scrim) {
       res.status(404).json({ error: "Scrim não encontrada" });
       return;
@@ -406,6 +408,29 @@ export async function createWebApp() {
     }
     const updated = await setDropMarkingOpen(client, scrim, Boolean(req.body?.open));
     res.json({ scrim: updated });
+  });
+
+  app.post("/api/scrims/:id/drops/assign", requireAuth, async (req, res) => {
+    const client = getDiscordClient();
+    const scrim = ensureScrimHasDrops(String(req.params.id));
+    if (!client?.isReady() || !scrim) {
+      res.status(404).json({ error: "Scrim não encontrada" });
+      return;
+    }
+    const dropId = String(req.body?.dropId ?? "").trim();
+    const discordUserId = String(req.body?.discordUserId ?? "").trim();
+    if (!dropId || !discordUserId) {
+      res.status(400).json({ error: "Escolha o player e o drop" });
+      return;
+    }
+    try {
+      const drop = await applyPlayerDrop(client, scrim.id, discordUserId, dropId, {
+        ignoreClosed: true,
+      });
+      res.json({ drop });
+    } catch (error) {
+      fail(res, error, "Não foi possível marcar o drop");
+    }
   });
 
   app.put("/api/scrims/:id/drops", requireAuth, (req, res) => {
@@ -535,19 +560,20 @@ export async function createWebApp() {
       res.status(404).json({ error: "Scrim não encontrada", login: false });
       return;
     }
-    const access = await resolveMapAccess(req, scrim);
+    const live = ensureScrimHasDrops(scrim.id) ?? scrim;
+    const access = await resolveMapAccess(req, live);
     if (!access.ok) {
       res.status(access.status).json({ error: access.error, login: Boolean(access.login) });
       return;
     }
     res.json({
-      name: scrim.name,
-      mapImageUrl: scrim.mapImageUrl || DEFAULT_MAP_URL,
-      drops: scrim.drops,
+      name: live.name,
+      mapImageUrl: live.mapImageUrl || DEFAULT_MAP_URL,
+      drops: live.drops,
       teamName: access.access.teamName,
       dropped: access.access.dropped,
       canClaim: access.access.canClaim,
-      dropsOpen: scrim.dropsOpen,
+      dropsOpen: live.dropsOpen,
       fortniteNick: access.access.fortniteNick,
       steps: access.access.isStaff
         ? []
@@ -571,22 +597,29 @@ export async function createWebApp() {
       res.status(404).json({ error: "Scrim não encontrada" });
       return;
     }
-    const access = await resolveMapAccess(req, scrim);
+    const live = ensureScrimHasDrops(scrim.id) ?? scrim;
+    const access = await resolveMapAccess(req, live);
     if (!access.ok) {
       res.status(access.status).json({ error: access.error, login: Boolean(access.login) });
       return;
     }
     if (!access.access.canClaim) {
       res.status(403).json({
-        error: scrim.dropsOpen
+        error: live.dropsOpen
           ? "Você não pode marcar drop."
           : "A staff fechou a marcação de drops.",
       });
       return;
     }
+    if (live.drops.length === 0) {
+      res.status(400).json({
+        error: "Este mapa ainda não tem POIs. A staff precisa salvar o preset de mapa.",
+      });
+      return;
+    }
     let dropId = String(req.body?.dropId ?? "");
     if (!dropId && req.body?.x != null && req.body?.y != null) {
-      dropId = findDropAt(scrim.id, Number(req.body.x), Number(req.body.y))?.id ?? "";
+      dropId = findDropAt(live.id, Number(req.body.x), Number(req.body.y))?.id ?? "";
     }
     if (!dropId) {
       res.status(400).json({ error: "Clique dentro de um drop" });

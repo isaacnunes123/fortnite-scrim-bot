@@ -3,7 +3,7 @@ import type { Request, Response } from "express";
 import { getDiscordClient } from "../bot/client.js";
 import { env } from "../env.js";
 import { publicBaseUrl } from "../scrims/links.js";
-import { getScrim, listInvites, type Scrim } from "../scrims/store.js";
+import { getScrim, listInvites, addInvite, type Scrim } from "../scrims/store.js";
 
 export const DROP_COOKIE = "drop_player";
 const OAUTH_COOKIE = "drop_oauth";
@@ -47,7 +47,7 @@ export function beginDiscordLogin(req: Request, res: Response): void {
     httpOnly: true,
     signed: true,
     sameSite: "lax",
-    secure: env.isProduction,
+    secure: env.cookieSecure,
     maxAge: 10 * 60 * 1000,
   });
   const url = new URL("https://discord.com/api/oauth2/authorize");
@@ -111,7 +111,7 @@ export async function finishDiscordLogin(req: Request, res: Response): Promise<v
       httpOnly: true,
       signed: true,
       sameSite: "lax",
-      secure: env.isProduction,
+      secure: env.cookieSecure,
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
     res.redirect("/");
@@ -127,10 +127,22 @@ export async function finishDiscordLogin(req: Request, res: Response): Promise<v
     httpOnly: true,
     signed: true,
     sameSite: "lax",
-    secure: env.isProduction,
+    secure: env.cookieSecure,
     maxAge: 12 * 60 * 60 * 1000,
   });
   res.redirect(`/mapa/${scrimId}`);
+}
+
+function mapUserId(req: Request): string {
+  const signed = String(req.signedCookies?.[DROP_COOKIE] ?? "").trim();
+  if (signed) {
+    return signed;
+  }
+  const session = String(req.signedCookies?.scrim_session ?? "").trim();
+  if (session.startsWith("discord:")) {
+    return session.slice("discord:".length);
+  }
+  return "";
 }
 
 export async function resolveMapAccess(
@@ -140,7 +152,7 @@ export async function resolveMapAccess(
   | { ok: true; access: MapAccess }
   | { ok: false; status: 401 | 403; error: string; login?: boolean }
 > {
-  const userId = String(req.signedCookies?.[DROP_COOKIE] ?? "");
+  const userId = mapUserId(req);
   if (!userId) {
     return { ok: false, status: 401, error: "Entre com Discord para abrir o mapa.", login: true };
   }
@@ -153,23 +165,42 @@ export async function resolveMapAccess(
     .fetch({ user: userId, force: true })
     .catch(() => null);
 
-  const invite = listInvites(scrim.id).find((item) => item.discordUserId === userId);
+  let invite = listInvites(scrim.id).find((item) => item.discordUserId === userId) ?? null;
   const roleIds = member ? [...member.roles.cache.keys()] : [];
-  const hasCheckinRole = roleIds.includes(scrim.discord.registeredRoleId);
+  const hasCheckinRole = Boolean(
+    scrim.discord && roleIds.includes(scrim.discord.registeredRoleId),
+  );
   const isStaff = scrim.staffRoleIds.some((id) => roleIds.includes(id));
-  const onList = Boolean(invite);
 
-  if (!onList && !hasCheckinRole && !isStaff) {
+  if (!invite && member && hasCheckinRole) {
+    try {
+      invite = addInvite({
+        scrimId: scrim.id,
+        discordUserId: member.id,
+        displayName: member.displayName,
+        teamName: member.displayName.slice(0, 32),
+        fortniteNick: member.displayName,
+      });
+    } catch {
+      invite = listInvites(scrim.id).find((item) => item.discordUserId === userId) ?? null;
+    }
+  }
+
+  if (invite) {
     return {
-      ok: false,
-      status: 403,
-      error: member
-        ? "Só quem fez check-in nesta scrim pode abrir o mapa."
-        : "Você não está no servidor desta scrim.",
+      ok: true,
+      access: {
+        userId,
+        teamName: invite.teamName,
+        fortniteNick: invite.fortniteNick || invite.displayName,
+        dropped: invite.dropped,
+        canClaim: Boolean(scrim.dropsOpen),
+        isStaff: false,
+      },
     };
   }
 
-  if (!onList && isStaff) {
+  if (isStaff) {
     return {
       ok: true,
       access: {
@@ -182,20 +213,13 @@ export async function resolveMapAccess(
       },
     };
   }
-  if (!invite) {
-    return { ok: false, status: 403, error: "Você não está na lista desta scrim." };
-  }
 
   return {
-    ok: true,
-    access: {
-      userId,
-      teamName: invite.teamName,
-      fortniteNick: invite.fortniteNick || invite.displayName,
-      dropped: invite.dropped,
-      canClaim: Boolean(scrim.dropsOpen),
-      isStaff: false,
-    },
+    ok: false,
+    status: 403,
+    error: member
+      ? "Só quem fez check-in nesta scrim pode abrir o mapa."
+      : "Você não está no servidor desta scrim.",
   };
 }
 

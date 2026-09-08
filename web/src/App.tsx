@@ -501,6 +501,8 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
   const [drops, setDrops] = useState<DropSpot[]>([]);
   const [leaveUntil, setLeaveUntil] = useState("");
   const [punishHours, setPunishHours] = useState(24);
+  const [assignUserId, setAssignUserId] = useState("");
+  const [assignDropId, setAssignDropId] = useState("");
 
   async function load() {
     const data = await api<{ scrim: ScrimDetail; invites: Invite[] }>(`/api/scrims/${id}`);
@@ -689,10 +691,66 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
 
       <h3>Mapa de drops</h3>
       <p className="muted">
-        Preset {scrim.templateName || "fixo"} — os players só marcam. Edite as áreas em
-        Presets de mapa.
+        Preset {scrim.templateName || "fixo"} — os players marcam sozinhos ou você atribui abaixo.
+        {drops.length === 0
+          ? " Este mapa ainda não tem POIs: salve o preset e recarregue esta página."
+          : ""}
       </p>
       <MapBoard imageUrl={scrim.mapImageUrl || "/maps/island.png"} drops={drops} />
+
+      <form
+        className="invite-form"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setError(null);
+          setNotice(null);
+          try {
+            await api(`/api/scrims/${id}/drops/assign`, {
+              method: "POST",
+              body: JSON.stringify({
+                discordUserId: assignUserId,
+                dropId: assignDropId,
+              }),
+            });
+            setNotice("Drop marcado para o player. Código e getting-off já devem ter liberado.");
+            await load();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Não foi possível marcar o drop");
+          }
+        }}
+      >
+        <label htmlFor="assign-player">Marcar drop manualmente</label>
+        <select
+          id="assign-player"
+          value={assignUserId}
+          onChange={(event) => setAssignUserId(event.target.value)}
+          required
+        >
+          <option value="">Player (check-in)</option>
+          {invites.map((member) => (
+            <option key={member.id} value={member.discordUserId}>
+              {member.displayName} · {member.fortniteNick || member.displayName}
+            </option>
+          ))}
+        </select>
+        <select
+          id="assign-drop"
+          value={assignDropId}
+          onChange={(event) => setAssignDropId(event.target.value)}
+          required
+        >
+          <option value="">POI</option>
+          {drops.map((drop) => (
+            <option key={drop.id} value={drop.id}>
+              {drop.name}
+              {drop.claimedByTeam ? ` · ${drop.claimedByTeam}` : " · livre"}
+            </option>
+          ))}
+        </select>
+        <button className="btn" type="submit" disabled={drops.length === 0 || invites.length === 0}>
+          Atribuir drop
+        </button>
+      </form>
 
       <form className="invite-form" onSubmit={onInvite}>
         <label htmlFor="team">Nome do time</label>

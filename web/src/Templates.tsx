@@ -65,6 +65,23 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
     setSaved(null);
   }
 
+  async function persistTemplate(next: MapTemplate) {
+    const data = await api<{ template: MapTemplate }>(`/api/templates/${next.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: next.name,
+        drops: next.drops,
+      }),
+    });
+    setTemplate(data.template);
+    setTemplates((current) =>
+      current.map((item) => (item.id === data.template.id ? data.template : item)),
+    );
+    setDirty(false);
+    setSaved("Preset salvo.");
+    return data.template;
+  }
+
   async function saveChanges() {
     if (!template) {
       return;
@@ -72,19 +89,7 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
     setSaving(true);
     setError(null);
     try {
-      const data = await api<{ template: MapTemplate }>(`/api/templates/${template.id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          name: template.name,
-          drops: template.drops,
-        }),
-      });
-      setTemplate(data.template);
-      setTemplates((current) =>
-        current.map((item) => (item.id === data.template.id ? data.template : item)),
-      );
-      setDirty(false);
-      setSaved("Alterações salvas.");
+      await persistTemplate(template);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível salvar");
     } finally {
@@ -164,9 +169,9 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
                   className="btn"
                   type="button"
                   onClick={() => void saveChanges()}
-                  disabled={saving || !dirty}
+                  disabled={saving}
                 >
-                  {saving ? "Salvando…" : "Salvar alterações"}
+                  {saving ? "Salvando…" : "Salvar preset"}
                 </button>
               <label className="btn secondary">
                 Trocar imagem
@@ -210,17 +215,42 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
               drops={template.drops}
               editor
               onCreate={(drop) => {
-                updateLocal({
+                const next: MapTemplate = {
+                  ...template,
                   drops: [
                     ...template.drops,
-                    { ...drop, id: crypto.randomUUID(), claimedByTeam: null, claimedByUserId: null, claimedByName: null, claimedByAvatarUrl: null },
+                    {
+                      ...drop,
+                      id: crypto.randomUUID(),
+                      claimedByTeam: null,
+                      claimedByUserId: null,
+                      claimedByName: null,
+                      claimedByAvatarUrl: null,
+                    },
                   ],
-                });
+                };
+                setTemplate(next);
+                setDirty(true);
+                setSaving(true);
+                persistTemplate(next)
+                  .catch((err) => {
+                    setError(err instanceof Error ? err.message : "Não foi possível salvar");
+                  })
+                  .finally(() => setSaving(false));
               }}
               onRemove={(dropId) => {
-                updateLocal({
+                const next: MapTemplate = {
+                  ...template,
                   drops: template.drops.filter((drop) => drop.id !== dropId),
-                });
+                };
+                setTemplate(next);
+                setDirty(true);
+                setSaving(true);
+                persistTemplate(next)
+                  .catch((err) => {
+                    setError(err instanceof Error ? err.message : "Não foi possível salvar");
+                  })
+                  .finally(() => setSaving(false));
               }}
             />
           </>

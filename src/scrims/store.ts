@@ -115,7 +115,22 @@ type StoreFile = {
   blacklist: BlacklistEntry[];
 };
 
-const filePath = path.join(process.cwd(), "data", "store.json");
+export function dataDir(): string {
+  const fromEnv = process.env.DATA_DIR?.trim();
+  if (fromEnv) {
+    return fromEnv;
+  }
+  if (process.env.NODE_ENV === "production" && fs.existsSync("/data")) {
+    return "/data";
+  }
+  return path.join(process.cwd(), "data");
+}
+
+function storeFilePath(): string {
+  return path.join(dataDir(), "store.json");
+}
+
+let cache: StoreFile | null = null;
 
 function defaultTemplates(): MapTemplate[] {
   return [
@@ -203,9 +218,9 @@ function normalizeTemplate(raw: MapTemplate): MapTemplate {
   };
 }
 
-function load(): StoreFile {
+function readDisk(): StoreFile {
   try {
-    const raw = fs.readFileSync(filePath, "utf-8");
+    const raw = fs.readFileSync(storeFilePath(), "utf-8");
     const parsed = JSON.parse(raw) as StoreFile;
     return {
       scrims: (parsed.scrims ?? []).map(normalizeScrim),
@@ -225,7 +240,16 @@ function load(): StoreFile {
   }
 }
 
-function save(store: StoreFile): void {
+function getStore(): StoreFile {
+  if (!cache) {
+    cache = readDisk();
+  }
+  return cache;
+}
+
+function persist(): void {
+  const store = getStore();
+  const filePath = storeFilePath();
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmp = `${filePath}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(store, null, 2));
@@ -246,16 +270,16 @@ export function cloneDrops(drops: DropSpot[]): DropSpot[] {
 }
 
 export function listTemplates(): MapTemplate[] {
-  return load().templates.slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  return getStore().templates.slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
 export function getTemplate(id: string): MapTemplate | null {
-  const template = load().templates.find((item) => item.id === id);
+  const template = getStore().templates.find((item) => item.id === id);
   return template ? normalizeTemplate(template) : null;
 }
 
 export function createTemplate(name: string, mapImageUrl = "/maps/island.png"): MapTemplate {
-  const store = load();
+  const store = getStore();
   const template: MapTemplate = {
     id: randomUUID(),
     name: name.trim() || "Novo preset",
@@ -264,12 +288,12 @@ export function createTemplate(name: string, mapImageUrl = "/maps/island.png"): 
     createdAt: new Date().toISOString(),
   };
   store.templates.push(template);
-  save(store);
+  persist();
   return template;
 }
 
 export function patchTemplate(id: string, patch: Partial<MapTemplate>): MapTemplate {
-  const store = load();
+  const store = getStore();
   const index = store.templates.findIndex((item) => item.id === id);
   if (index < 0) {
     throw new Error("Preset não encontrado");
@@ -277,12 +301,20 @@ export function patchTemplate(id: string, patch: Partial<MapTemplate>): MapTempl
   const current = normalizeTemplate(store.templates[index]!);
   const next = normalizeTemplate({ ...current, ...patch, id });
   store.templates[index] = next;
-  save(store);
+  if (next.drops.length > 0) {
+    for (const scrim of store.scrims) {
+      if (scrim.templateId === id && scrim.drops.length === 0) {
+        scrim.drops = cloneDrops(next.drops);
+        scrim.mapImageUrl = next.mapImageUrl || scrim.mapImageUrl;
+      }
+    }
+  }
+  persist();
   return next;
 }
 
 export function deleteTemplate(id: string): boolean {
-  const store = load();
+  const store = getStore();
   const before = store.templates.length;
   store.templates = store.templates.filter((item) => item.id !== id);
   if (store.templates.length === before) {
@@ -291,7 +323,7 @@ export function deleteTemplate(id: string): boolean {
   if (store.templates.length === 0) {
     store.templates = defaultTemplates();
   }
-  save(store);
+  persist();
   return true;
 }
 
@@ -304,7 +336,7 @@ export function teamCount(scrimId: string): number {
 }
 
 export function nextLobbyNumber(guildId?: string): number {
-  const numbers = load()
+  const numbers = getStore()
     .scrims.filter((scrim) => !guildId || scrim.guildId === guildId)
     .map((scrim) => scrim.discord?.lobbyNumber ?? 0)
     .filter((n) => n > 0);
@@ -312,20 +344,38 @@ export function nextLobbyNumber(guildId?: string): number {
 }
 
 export function listScrims(): Scrim[] {
-  return load().scrims.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return getStore().scrims.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export function getScrim(id: string): Scrim | null {
-  const scrim = load().scrims.find((item) => item.id === id);
+  const scrim = getStore().scrims.find((item) => item.id === id);
   return scrim ? normalizeScrim(scrim) : null;
 }
 
+export function ensureScrimHasDrops(scrimId: string): Scrim | null {
+  const scrim = getScrim(scrimId);
+  if (!scrim) {
+    return null;
+  }
+  if (scrim.drops.length > 0) {
+    return scrim;
+  }
+  const template = getTemplate(scrim.templateId);
+  if (!template || template.drops.length === 0) {
+    return scrim;
+  }
+  return patchScrim(scrim.id, {
+    drops: cloneDrops(template.drops),
+    mapImageUrl: template.mapImageUrl || scrim.mapImageUrl,
+  });
+}
+
 export function listInvites(scrimId: string): Invite[] {
-  return load().invites.filter((invite) => invite.scrimId === scrimId);
+  return getStore().invites.filter((invite) => invite.scrimId === scrimId);
 }
 
 export function listInvitesForUser(discordUserId: string): Array<Invite & { scrim: Scrim }> {
-  const store = load();
+  const store = getStore();
   return store.invites
     .filter((invite) => invite.discordUserId === discordUserId)
     .map((invite) => {
@@ -350,7 +400,7 @@ export function createScrim(input: {
   if (!template) {
     throw new Error("Escolha um preset de mapa");
   }
-  const store = load();
+  const store = getStore();
   const scrim: Scrim = {
     id: randomUUID(),
     name: input.name.trim(),
@@ -373,12 +423,12 @@ export function createScrim(input: {
     dropsOpen: true,
   };
   store.scrims.push(scrim);
-  save(store);
+  persist();
   return scrim;
 }
 
 export function patchScrim(id: string, patch: Partial<Scrim>): Scrim {
-  const store = load();
+  const store = getStore();
   const index = store.scrims.findIndex((item) => item.id === id);
   if (index < 0) {
     throw new Error("Scrim não encontrada");
@@ -386,7 +436,7 @@ export function patchScrim(id: string, patch: Partial<Scrim>): Scrim {
   const current = normalizeScrim(store.scrims[index]!);
   const next = { ...current, ...patch, id };
   store.scrims[index] = next;
-  save(store);
+  persist();
   return next;
 }
 
@@ -397,7 +447,7 @@ export function addInvite(input: {
   teamName: string;
   fortniteNick: string;
 }): Invite {
-  const store = load();
+  const store = getStore();
   const scrim = store.scrims.find((item) => item.id === input.scrimId);
   if (!scrim) {
     throw new Error("Scrim não encontrada");
@@ -456,12 +506,12 @@ export function addInvite(input: {
     fortniteNick,
   };
   store.invites.push(invite);
-  save(store);
+  persist();
   return invite;
 }
 
 export function removeInvite(scrimId: string, inviteId: string): boolean {
-  const store = load();
+  const store = getStore();
   const before = store.invites.length;
   store.invites = store.invites.filter(
     (invite) => !(invite.scrimId === scrimId && invite.id === inviteId),
@@ -469,12 +519,12 @@ export function removeInvite(scrimId: string, inviteId: string): boolean {
   if (store.invites.length === before) {
     return false;
   }
-  save(store);
+  persist();
   return true;
 }
 
 export function removePlayer(scrimId: string, discordUserId: string): Invite | null {
-  const store = load();
+  const store = getStore();
   const invite = store.invites.find(
     (item) => item.scrimId === scrimId && item.discordUserId === discordUserId,
   );
@@ -482,12 +532,12 @@ export function removePlayer(scrimId: string, discordUserId: string): Invite | n
     return null;
   }
   store.invites = store.invites.filter((item) => item.id !== invite.id);
-  save(store);
+  persist();
   return invite;
 }
 
 export function markDropped(scrimId: string, discordUserId: string): Invite | null {
-  const store = load();
+  const store = getStore();
   const invite = store.invites.find(
     (item) => item.scrimId === scrimId && item.discordUserId === discordUserId,
   );
@@ -495,7 +545,7 @@ export function markDropped(scrimId: string, discordUserId: string): Invite | nu
     return null;
   }
   invite.dropped = true;
-  save(store);
+  persist();
   return invite;
 }
 
@@ -530,7 +580,7 @@ export function claimDrop(
   teamName: string,
   claimant: { userId: string; displayName: string; avatarUrl: string } | null,
 ): DropSpot {
-  const store = load();
+  const store = getStore();
   const scrim = store.scrims.find((item) => item.id === scrimId);
   if (!scrim) {
     throw new Error("Scrim não encontrada");
@@ -557,7 +607,7 @@ export function claimDrop(
   drop.claimedByUserId = claimant?.userId ?? null;
   drop.claimedByName = claimant?.displayName ?? null;
   drop.claimedByAvatarUrl = claimant?.avatarUrl ?? null;
-  save(store);
+  persist();
   return drop;
 }
 
@@ -565,7 +615,7 @@ export function getActiveBan(discordUserId: string): BlacklistEntry | null {
   pruneExpiredBans();
   const now = Date.now();
   return (
-    load().blacklist.find(
+    getStore().blacklist.find(
       (entry) => entry.discordUserId === discordUserId && Date.parse(entry.expiresAt) > now,
     ) ?? null
   );
@@ -574,7 +624,7 @@ export function getActiveBan(discordUserId: string): BlacklistEntry | null {
 export function listBlacklist(): BlacklistEntry[] {
   pruneExpiredBans();
   const now = Date.now();
-  return load()
+  return getStore()
     .blacklist.filter((entry) => Date.parse(entry.expiresAt) > now)
     .sort((a, b) => a.expiresAt.localeCompare(b.expiresAt));
 }
@@ -587,7 +637,7 @@ export function addBlacklist(input: {
   hours: number;
   scrimId: string;
 }): BlacklistEntry {
-  const store = load();
+  const store = getStore();
   const now = new Date();
   const entry: BlacklistEntry = {
     id: randomUUID(),
@@ -600,28 +650,28 @@ export function addBlacklist(input: {
     scrimId: input.scrimId,
   };
   store.blacklist.push(entry);
-  save(store);
+  persist();
   return entry;
 }
 
 function pruneExpiredBans(): void {
-  const store = load();
+  const store = getStore();
   const now = Date.now();
   const next = store.blacklist.filter((entry) => Date.parse(entry.expiresAt) > now);
   if (next.length !== store.blacklist.length) {
     store.blacklist = next;
-    save(store);
+    persist();
   }
 }
 
 export function deleteScrim(id: string): Scrim | null {
-  const store = load();
+  const store = getStore();
   const scrim = store.scrims.find((item) => item.id === id) ?? null;
   if (!scrim) {
     return null;
   }
   store.scrims = store.scrims.filter((item) => item.id !== id);
   store.invites = store.invites.filter((invite) => invite.scrimId !== id);
-  save(store);
+  persist();
   return normalizeScrim(scrim);
 }
