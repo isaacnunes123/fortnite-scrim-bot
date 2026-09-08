@@ -1,0 +1,136 @@
+export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    ...init,
+  });
+  const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (!response.ok) {
+    throw new Error(data.error || "Falha na requisição");
+  }
+  return data;
+}
+
+export async function uploadMap(file: File, path = "/api/maps/upload"): Promise<string> {
+  const response = await fetch(path, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": file.type || "image/png" },
+    body: await file.arrayBuffer(),
+  });
+  const data = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+  if (!response.ok || !data.url) {
+    throw new Error(data.error || "Falha ao enviar o mapa");
+  }
+  return data.url;
+}
+
+export type BotStatus = {
+  configured: boolean;
+  ready: boolean;
+  username: string | null;
+  id: string | null;
+  guildCount: number;
+  uptimeMs: number | null;
+};
+
+export type DropKind = "poi" | "contested" | "locked";
+
+export type DropVertex = {
+  x: number;
+  y: number;
+};
+
+export type DropSpot = {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  kind: DropKind;
+  vertices: DropVertex[];
+  claimedByTeam: string | null;
+  claimedByUserId?: string | null;
+  claimedByName?: string | null;
+  claimedByAvatarUrl?: string | null;
+};
+
+export type MapTemplate = {
+  id: string;
+  name: string;
+  mapImageUrl: string;
+  drops: DropSpot[];
+  createdAt: string;
+};
+
+export type PriorityWindow = {
+  roleId: string;
+  time: string;
+};
+
+export type DiscordGuild = {
+  id: string;
+  name: string;
+  memberCount: number;
+};
+
+export type DiscordRole = {
+  id: string;
+  name: string;
+  color: string;
+};
+
+export type ScrimSummary = {
+  id: string;
+  name: string;
+  mode: "solo" | "duo" | "trio" | "squad";
+  maxSlots: number;
+  createdAt: string;
+  teamSize: number;
+  inviteCount: number;
+  teamCount: number;
+  guildName?: string;
+};
+
+export type Invite = {
+  id: string;
+  scrimId: string;
+  discordUserId: string;
+  displayName: string;
+  teamName: string;
+  createdAt: string;
+  dropped: boolean;
+  fortniteNick: string;
+};
+
+export type BlacklistEntry = {
+  id: string;
+  discordUserId: string;
+  displayName: string;
+  fortniteNick: string;
+  reason: string;
+  createdAt: string;
+  expiresAt: string;
+  scrimId: string;
+};
+
+export type ScrimDetail = {
+  id: string;
+  name: string;
+  mode: "solo" | "duo" | "trio" | "squad";
+  maxSlots: number;
+  createdAt: string;
+  teamSize: number;
+  teamCount: number;
+  accessRoleIds: string[];
+  staffRoleIds: string[];
+  windows: PriorityWindow[];
+  leaveUntil: string;
+  punishHours: number;
+  mapImageUrl: string;
+  matchCode: string;
+  drops: DropSpot[];
+  guildName?: string;
+  templateName?: string;
+  dropsOpen?: boolean;
+  discord: { lobbyNumber: number; fillChatOpen: boolean } | null;
+};
