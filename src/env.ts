@@ -15,11 +15,18 @@ export const env = {
   discordClientSecret: process.env.DISCORD_CLIENT_SECRET?.trim() ?? "",
   discordGuildId: process.env.DISCORD_GUILD_ID?.trim() ?? "",
   adminPassword: required("ADMIN_PASSWORD"),
-  adminRoleIds: (process.env.ADMIN_ROLE_IDS ?? "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean),
+  adminRoleIds: parseIdList(process.env.ADMIN_ROLE_IDS),
   sessionSecret: required("SESSION_SECRET"),
   port: Number(process.env.PORT ?? 3000),
   isProduction: process.env.NODE_ENV === "production",
 };
+
+function parseIdList(raw: string | undefined): string[] {
+  if (!raw) {
+    return [];
+  }
+  return raw
+    .split(/[,;\n]+/)
+    .map((item) => item.replace(/[<@&>'"\s]/g, "").trim())
+    .filter((id) => /^\d{17,20}$/.test(id));
+}

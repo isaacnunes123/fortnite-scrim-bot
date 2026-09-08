@@ -97,9 +97,13 @@ export async function finishDiscordLogin(req: Request, res: Response): Promise<v
   }
 
   if (kind === "admin") {
-    const allowed = await memberHasAdminRole(me.id);
-    if (!allowed) {
-      res.status(403).send("Seu cargo no Discord não libera o painel.");
+    const check = await explainAdminAccess(me.id);
+    if (!check.ok) {
+      res.status(403).type("html").send(
+        `<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;padding:32px;max-width:560px">
+        <p>${escapeHtml(check.reason)}</p>
+        <p><a href="/">Voltar</a></p></body>`,
+      );
       return;
     }
     res.cookie("scrim_session", `discord:${me.id}`, {
@@ -190,26 +194,63 @@ export async function resolveMapAccess(
 }
 
 export async function memberHasAdminRole(userId: string): Promise<boolean> {
+  const check = await explainAdminAccess(userId);
+  return check.ok;
+}
+
+export async function explainAdminAccess(
+  userId: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (env.adminRoleIds.length === 0) {
-    return false;
+    return {
+      ok: false,
+      reason:
+        "ADMIN_ROLE_IDS no Railway está vazio ou não é ID numérico. No Discord: Configurações → Avançado → Modo desenvolvedor. Depois, em Cargos, botão direito no cargo → Copiar ID.",
+    };
   }
   const client = getDiscordClient();
   if (!client?.isReady()) {
-    return false;
+    return { ok: false, reason: "Bot Discord offline no Railway. Confira DISCORD_TOKEN." };
   }
-  const guilds = env.discordGuildId
-    ? [await client.guilds.fetch(env.discordGuildId).catch(() => null)]
-    : [...client.guilds.cache.values()];
+  await client.guilds.fetch().catch(() => undefined);
+  const guilds = [...client.guilds.cache.values()];
+  if (guilds.length === 0) {
+    return { ok: false, reason: "O bot não está em nenhum servidor." };
+  }
+
+  let sawMember = false;
+  const serverNames: string[] = [];
   for (const guild of guilds) {
-    if (!guild) {
+    const member = await guild.members.fetch({ user: userId, force: true }).catch(() => null);
+    if (!member) {
       continue;
     }
-    const member = await guild.members.fetch(userId).catch(() => null);
-    if (member && env.adminRoleIds.some((id) => member.roles.cache.has(id))) {
-      return true;
+    sawMember = true;
+    serverNames.push(guild.name);
+    if (env.adminRoleIds.some((id) => member.roles.cache.has(id))) {
+      return { ok: true };
     }
   }
-  return false;
+
+  if (!sawMember) {
+    return {
+      ok: false,
+      reason: `Login ok, mas o bot não te encontrou nos servidores (${guilds.map((g) => g.name).join(", ")}). Entra no mesmo servidor onde o bot está, com a mesma conta Discord do login.`,
+    };
+  }
+
+  return {
+    ok: false,
+    reason: `Te achei em: ${serverNames.join(", ")}. Nenhum cargo bate com ADMIN_ROLE_IDS. Copie o ID do cargo (não o nome) e cole no Railway, só números, separados por vírgula.`,
+  };
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 export async function isStaffSession(req: Request): Promise<boolean> {
