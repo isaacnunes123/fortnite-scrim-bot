@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   type BotStatus,
@@ -9,6 +9,8 @@ import {
   type Invite,
   type MapTemplate,
   type PriorityWindow,
+  type ActivityLog,
+  type ScrimEmbeds,
   type ScrimDetail,
   type ScrimSummary,
 } from "./api";
@@ -24,7 +26,73 @@ type AuthState = {
 
 type View = { page: "home" } | { page: "scrim"; id: string } | { page: "presets" };
 
-function formatUptime(ms: number | null): string {
+function formatWhen(value: string): string {
+  return new Date(value).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+}
+
+function useLiveReload(onTick: () => void) {
+  const tick = useRef(onTick);
+  tick.current = onTick;
+  useEffect(() => {
+    const run = () => {
+      void tick.current();
+    };
+    const source = new EventSource("/api/stream");
+    source.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data) as { type?: string };
+        if (data.type === "ping") {
+          return;
+        }
+        run();
+      } catch {
+        run();
+      }
+    };
+    const timer = window.setInterval(run, 4000);
+    return () => {
+      source.close();
+      window.clearInterval(timer);
+    };
+  }, []);
+}
+
+function ActivityFeed({
+  logs,
+  full,
+  onToggle,
+}: {
+  logs: ActivityLog[];
+  full: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <section className="log-panel">
+      <header>
+        <h3>Log ao vivo</h3>
+        <button className="btn secondary" type="button" onClick={onToggle}>
+          {full ? "Visão simples" : "Visão completa"}
+        </button>
+      </header>
+      {logs.length === 0 ? (
+        <p className="muted">Nada ainda. Check-in, drops e ações da staff aparecem aqui.</p>
+      ) : (
+        <ul>
+          {logs.map((item) => (
+            <li key={item.id}>
+              <span className={`log-kind ${item.kind}`}>{item.kind}</span>
+              <div>
+                <strong>{item.summary}</strong>
+                {full ? <p>{item.detail}</p> : null}
+                <em>{formatWhen(item.at)}</em>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
   if (ms == null) return "—";
   const minutes = Math.floor(ms / 60000);
   if (minutes < 60) return `${minutes} min`;
@@ -218,6 +286,18 @@ function Home({
   ]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [logFull, setLogFull] = useState(false);
+
+  async function loadLogs() {
+    const feed = await api<{ logs: ActivityLog[] }>("/api/logs").catch(() => ({ logs: [] }));
+    setLogs(feed.logs ?? []);
+    await onCreated().catch(() => undefined);
+  }
+
+  useLiveReload(() => {
+    void loadLogs();
+  });
 
   useEffect(() => {
     api<{ guilds: DiscordGuild[] }>("/api/discord/guilds")
@@ -438,6 +518,10 @@ function Home({
 
         <div>
         <div className="card">
+          <span className="pill live">Painel ao vivo</span>
+          <ActivityFeed logs={logs} full={logFull} onToggle={() => setLogFull((value) => !value)} />
+        </div>
+        <div className="card" style={{ marginTop: 16 }}>
           <h2 style={{ marginTop: 0 }}>Listas</h2>
           {scrims.length === 0 ? (
             <p className="muted">Nenhuma scrim ainda. Crie a primeira ao lado.</p>
@@ -503,16 +587,33 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
   const [punishHours, setPunishHours] = useState(24);
   const [assignUserId, setAssignUserId] = useState("");
   const [assignDropId, setAssignDropId] = useState("");
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [logFull, setLogFull] = useState(false);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | "drop" | "pending">("all");
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [embeds, setEmbeds] = useState<ScrimEmbeds | null>(null);
 
   async function load() {
-    const data = await api<{ scrim: ScrimDetail; invites: Invite[] }>(`/api/scrims/${id}`);
+    const [data, feed] = await Promise.all([
+      api<{ scrim: ScrimDetail; invites: Invite[] }>(`/api/scrims/${id}`),
+      api<{ logs: ActivityLog[] }>(`/api/logs?scrim=${encodeURIComponent(id)}`),
+    ]);
     setScrim(data.scrim);
     setInvites(data.invites);
     setDrops(data.scrim.drops ?? []);
     setCode(data.scrim.matchCode ?? "");
     setLeaveUntil(data.scrim.leaveUntil ?? "");
     setPunishHours(data.scrim.punishHours ?? 24);
+    if (data.scrim.embeds) {
+      setEmbeds(data.scrim.embeds);
+    }
+    setLogs(feed.logs ?? []);
   }
+
+  useLiveReload(() => {
+    void load().catch(() => undefined);
+  });
 
   useEffect(() => {
     load().catch((err) => {
@@ -529,6 +630,35 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
     }
     return [...grouped.entries()];
   }, [invites]);
+
+  const visibleInvites = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return invites
+      .slice()
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .filter((item) => {
+        if (filter === "drop" && !item.dropped) {
+          return false;
+        }
+        if (filter === "pending" && item.dropped) {
+          return false;
+        }
+        if (!q) {
+          return true;
+        }
+        return [
+          item.displayName,
+          item.username,
+          item.fortniteNick,
+          item.discordUserId,
+          item.dropName,
+          item.highestRoleName,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      });
+  }, [invites, query, filter]);
 
   async function onInvite(event: FormEvent) {
     event.preventDefault();
@@ -588,13 +718,18 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
               : " · checkout ainda não definido"}
           </p>
         </div>
-        <button className="btn danger" type="button" onClick={onDelete}>
-          Apagar scrim
-        </button>
+        <div className="actions">
+          <span className="pill live">Ao vivo</span>
+          <button className="btn danger" type="button" onClick={onDelete}>
+            Apagar scrim
+          </button>
+        </div>
       </div>
 
       {error ? <p className="error">{error}</p> : null}
       {notice ? <p className="ok-text">{notice}</p> : null}
+
+      <ActivityFeed logs={logs} full={logFull} onToggle={() => setLogFull((value) => !value)} />
 
       <form
         className="invite-form"
@@ -688,6 +823,100 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           {scrim.dropsOpen ? "Parar marcação de drops" : "Liberar marcação de drops"}
         </button>
       </form>
+
+      {embeds ? (
+        <form
+          className="embed-editor"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setError(null);
+            try {
+              await api(`/api/scrims/${id}/embeds`, {
+                method: "PUT",
+                body: JSON.stringify({ embeds }),
+              });
+              setNotice("Embeds salvas e atualizadas no Discord.");
+              await load();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Não foi possível salvar as embeds");
+            }
+          }}
+        >
+          <h3>Embeds do Discord</h3>
+          <p className="muted">
+            Variáveis: {"{name}"} {"{teams}"} {"{max}"} {"{windows}"} {"{url}"} {"{leaveUntil}"}{" "}
+            {"{punishHours}"} {"{code}"}
+          </p>
+          {(
+            [
+              ["registration", "Check-in"],
+              ["dropmapOpen", "Mapa aberto"],
+              ["dropmapClosed", "Mapa fechado"],
+              ["leave", "Getting-off"],
+              ["code", "Código"],
+            ] as Array<[keyof ScrimEmbeds, string]>
+          ).map(([key, label]) => (
+            <fieldset key={key}>
+              <legend>{label}</legend>
+              <label>
+                Título
+                <input
+                  value={embeds[key].title}
+                  onChange={(event) =>
+                    setEmbeds({
+                      ...embeds,
+                      [key]: { ...embeds[key], title: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Texto
+                <textarea
+                  rows={5}
+                  value={embeds[key].description}
+                  onChange={(event) =>
+                    setEmbeds({
+                      ...embeds,
+                      [key]: { ...embeds[key], description: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <div className="embed-meta">
+                <label>
+                  Cor
+                  <input
+                    type="color"
+                    value={embeds[key].color.startsWith("#") ? embeds[key].color : "#3b82f6"}
+                    onChange={(event) =>
+                      setEmbeds({
+                        ...embeds,
+                        [key]: { ...embeds[key], color: event.target.value },
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Rodapé
+                  <input
+                    value={embeds[key].footer}
+                    onChange={(event) =>
+                      setEmbeds({
+                        ...embeds,
+                        [key]: { ...embeds[key], footer: event.target.value },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            </fieldset>
+          ))}
+          <button className="btn" type="submit">
+            Salvar e atualizar no Discord
+          </button>
+        </form>
+      ) : null}
 
       <h3>Mapa de drops</h3>
       <p className="muted">
@@ -784,18 +1013,32 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
 
       <h3>Check-ins</h3>
       <p className="muted">
-        Discord, foto, ID, nick (apelido / Fortnite), horário de check-in e cargo mais alto no
-        servidor. {invites.filter((item) => item.dropped).length}/{invites.length} já marcaram drop.
+        {invites.filter((item) => item.dropped).length}/{invites.length} com drop. Clique no card
+        para ver cargos, horários e copiar o ID.
       </p>
-      {invites.length === 0 ? (
-        <p className="muted">Nenhum check-in ainda.</p>
+      <div className="roster-tools">
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Buscar nick, ID, cargo, drop…"
+        />
+        <select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}>
+          <option value="all">Todos</option>
+          <option value="pending">Sem drop</option>
+          <option value="drop">Com drop</option>
+        </select>
+      </div>
+      {visibleInvites.length === 0 ? (
+        <p className="muted">Nenhum check-in neste filtro.</p>
       ) : (
         <ul className="roster">
-          {invites
-            .slice()
-            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-            .map((member) => (
-              <li key={member.id}>
+          {visibleInvites.map((member) => (
+            <li key={member.id} className={member.dropped ? "has-drop" : "no-drop"}>
+              <button
+                type="button"
+                className="roster-main"
+                onClick={() => setOpenId(openId === member.id ? null : member.id)}
+              >
                 {member.avatarUrl ? (
                   <img src={member.avatarUrl} alt="" className="roster-face" />
                 ) : (
@@ -807,14 +1050,16 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
                     <span className="muted">@{member.username || member.displayName}</span>
                   </strong>
                   <span>
-                    Nick Fortnite: <b>{member.fortniteNick || member.displayName}</b>
+                    Fortnite: <b>{member.fortniteNick || member.displayName}</b>
+                    {member.globalName ? ` · global ${member.globalName}` : ""}
                   </span>
                   <span>
-                    ID <code>{member.discordUserId}</code> · check-in{" "}
-                    {new Date(member.createdAt).toLocaleString("pt-BR", {
-                      timeZone: "America/Sao_Paulo",
-                    })}
-                    {member.dropped ? " · drop ok" : " · sem drop"}
+                    Check-in {formatWhen(member.createdAt)}
+                    {member.dropped
+                      ? ` · drop ${member.dropName || "ok"}${member.droppedAt ? ` às ${formatWhen(member.droppedAt)}` : ""}`
+                      : " · sem drop"}
+                    {member.inServer === false ? " · fora do servidor" : ""}
+                    {member.boosted ? " · boost" : ""}
                   </span>
                 </div>
                 <span
@@ -823,11 +1068,34 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
                 >
                   {member.highestRoleName || "—"}
                 </span>
-                <button className="btn secondary" type="button" onClick={() => onRemove(member.id)}>
-                  Tirar
-                </button>
-              </li>
-            ))}
+              </button>
+              <button className="btn secondary" type="button" onClick={() => onRemove(member.id)}>
+                Tirar
+              </button>
+              {openId === member.id ? (
+                <div className="roster-details">
+                  <p>
+                    ID Discord <code>{member.discordUserId}</code>{" "}
+                    <button
+                      className="btn secondary"
+                      type="button"
+                      onClick={() => void navigator.clipboard.writeText(member.discordUserId)}
+                    >
+                      Copiar ID
+                    </button>
+                  </p>
+                  <p>Time: {member.teamName}</p>
+                  {member.joinedAt ? <p>Entrou no servidor: {formatWhen(member.joinedAt)}</p> : null}
+                  <p>
+                    Cargos:{" "}
+                    {(member.roles ?? []).length
+                      ? member.roles!.map((role) => role.name).join(", ")
+                      : member.highestRoleName}
+                  </p>
+                </div>
+              ) : null}
+            </li>
+          ))}
         </ul>
       )}
 

@@ -110,12 +110,24 @@ export async function rosterForScrim(
         .filter((role) => role.id !== guild?.id)
         .sort((a, b) => b.position - a.position)
         .first();
+      const roles = member
+        ? [...member.roles.cache.values()]
+            .filter((role) => role.id !== guild?.id)
+            .sort((a, b) => b.position - a.position)
+            .slice(0, 8)
+            .map((role) => ({ name: role.name, color: role.hexColor }))
+        : [];
       return {
         ...invite,
         username: member?.user.username ?? invite.displayName,
-        avatarUrl: member?.displayAvatarURL({ size: 64, extension: "png" }) ?? "",
+        globalName: member?.user.globalName ?? "",
+        avatarUrl: member?.displayAvatarURL({ size: 128, extension: "png" }) ?? "",
         highestRoleName: highest?.name ?? "—",
         highestRoleColor: highest && highest.color ? highest.hexColor : "#6b7280",
+        roles,
+        inServer: Boolean(member),
+        boosted: Boolean(member?.premiumSince),
+        joinedAt: member?.joinedAt?.toISOString() ?? null,
       };
     }),
   );

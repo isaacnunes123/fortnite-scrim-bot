@@ -91,6 +91,30 @@ export type ScrimSummary = {
   guildName?: string;
 };
 
+export type EmbedCopy = {
+  title: string;
+  description: string;
+  color: string;
+  footer: string;
+};
+
+export type ScrimEmbeds = {
+  registration: EmbedCopy;
+  dropmapOpen: EmbedCopy;
+  dropmapClosed: EmbedCopy;
+  leave: EmbedCopy;
+  code: EmbedCopy;
+};
+
+export type ActivityLog = {
+  id: string;
+  at: string;
+  scrimId: string | null;
+  kind: string;
+  summary: string;
+  detail: string;
+};
+
 export type Invite = {
   id: string;
   scrimId: string;
@@ -100,10 +124,17 @@ export type Invite = {
   createdAt: string;
   dropped: boolean;
   fortniteNick: string;
+  droppedAt?: string | null;
+  dropName?: string | null;
   username?: string;
+  globalName?: string;
   avatarUrl?: string;
   highestRoleName?: string;
   highestRoleColor?: string;
+  roles?: Array<{ name: string; color: string }>;
+  inServer?: boolean;
+  boosted?: boolean;
+  joinedAt?: string | null;
 };
 
 export type BlacklistEntry = {
@@ -136,5 +167,6 @@ export type ScrimDetail = {
   guildName?: string;
   templateName?: string;
   dropsOpen?: boolean;
+  embeds?: ScrimEmbeds;
   discord: { lobbyNumber: number; fillChatOpen: boolean } | null;
 };

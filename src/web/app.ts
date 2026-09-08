@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getBotStatus, getDiscordClient } from "../bot/client.js";
 import { getGuild, listBotGuilds, notifyInvite, resolveDiscordPlayer, rosterForScrim } from "../bot/guild.js";
+import { subscribe } from "../scrims/live.js";
 import { env } from "../env.js";
 import { DEFAULT_MAP_URL, saveUploadedMap, uploadDir } from "../scrims/maps.js";
 import {
@@ -15,9 +16,11 @@ import {
 } from "./dropAuth.js";
 import {
   applyPlayerDrop,
+  ensureDropMapEmbed,
   postMatchCode,
   provisionLobby,
   refreshLeaveMessage,
+  refreshRegistrationMessage,
   setDropMarkingOpen,
   setFillChatOpen,
   syncLobbyAccess,
@@ -25,6 +28,7 @@ import {
 } from "../scrims/lobby.js";
 import {
   addInvite,
+  addLog,
   createScrim,
   createTemplate,
   deleteTemplate,
@@ -39,6 +43,7 @@ import {
   isScrimMode,
   listBlacklist,
   listInvites,
+  listLogs,
   listScrims,
   MODE_SIZE,
   normalizeDrop,
@@ -84,6 +89,32 @@ export async function createWebApp() {
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, service: "fortnite-scrim-bot" });
+  });
+
+  app.get("/api/stream", async (req, res) => {
+    if (!(await isStaffSession(req))) {
+      res.status(401).end();
+      return;
+    }
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders?.();
+    const send = (event: { type: string }) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+    send({ type: "hello" });
+    const off = subscribe((event) => send(event));
+    const ping = setInterval(() => send({ type: "ping" }), 15000);
+    req.on("close", () => {
+      clearInterval(ping);
+      off();
+    });
+  });
+
+  app.get("/api/logs", requireAuth, (req, res) => {
+    const scrimId = String(req.query.scrim ?? "").trim();
+    res.json({ logs: listLogs(scrimId || undefined, 120) });
   });
 
   app.get("/api/auth/me", async (req, res) => {
@@ -363,6 +394,12 @@ export async function createWebApp() {
     const matchCode = String(req.body?.code ?? "").trim();
     const updated = patchScrim(scrim.id, { matchCode });
     await postMatchCode(client, updated);
+    addLog({
+      scrimId: scrim.id,
+      kind: "code",
+      summary: "Código da partida enviado",
+      detail: matchCode,
+    });
     res.json({ scrim: updated });
   });
 
@@ -385,6 +422,12 @@ export async function createWebApp() {
     }
     const updated = patchScrim(scrim.id, { leaveUntil, punishHours });
     await refreshLeaveMessage(client, updated.id);
+    addLog({
+      scrimId: scrim.id,
+      kind: "checkout",
+      summary: `Checkout até ${leaveUntil}`,
+      detail: `Ban ${punishHours}h`,
+    });
     res.json({ scrim: updated });
   });
 
@@ -396,6 +439,11 @@ export async function createWebApp() {
       return;
     }
     await setFillChatOpen(client, scrim, Boolean(req.body?.open));
+    addLog({
+      scrimId: scrim.id,
+      kind: "fill",
+      summary: req.body?.open ? "Fill liberado" : "Fill bloqueado",
+    });
     res.json({ ok: true });
   });
 
@@ -406,7 +454,39 @@ export async function createWebApp() {
       res.status(404).json({ error: "Scrim não encontrada" });
       return;
     }
-    const updated = await setDropMarkingOpen(client, scrim, Boolean(req.body?.open));
+    const open = Boolean(req.body?.open);
+    const updated = await setDropMarkingOpen(client, scrim, open);
+    addLog({
+      scrimId: scrim.id,
+      kind: "map",
+      summary: open ? "Marcação de drops liberada" : "Marcação de drops fechada",
+    });
+    res.json({ scrim: updated });
+  });
+
+  app.put("/api/scrims/:id/embeds", requireAuth, async (req, res) => {
+    const client = getDiscordClient();
+    const scrim = getScrim(String(req.params.id));
+    if (!scrim) {
+      res.status(404).json({ error: "Scrim não encontrada" });
+      return;
+    }
+    const updated = patchScrim(scrim.id, {
+      embeds: {
+        ...scrim.embeds,
+        ...(req.body?.embeds ?? {}),
+      },
+    });
+    if (client?.isReady()) {
+      await refreshRegistrationMessage(client, updated.id).catch(() => undefined);
+      await refreshLeaveMessage(client, updated.id).catch(() => undefined);
+      await ensureDropMapEmbed(client, updated).catch(() => undefined);
+    }
+    addLog({
+      scrimId: scrim.id,
+      kind: "embed",
+      summary: "Embeds do Discord atualizadas",
+    });
     res.json({ scrim: updated });
   });
 

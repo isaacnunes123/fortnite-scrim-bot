@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { centroidOf, pointInPolygon, type Vertex } from "./geometry.js";
+import { publish } from "./live.js";
 
 export const MODE_SIZE = {
   solo: 1,
@@ -56,6 +57,30 @@ export type DiscordLobby = {
   fillChatOpen: boolean;
 };
 
+export type EmbedCopy = {
+  title: string;
+  description: string;
+  color: string;
+  footer: string;
+};
+
+export type ScrimEmbeds = {
+  registration: EmbedCopy;
+  dropmapOpen: EmbedCopy;
+  dropmapClosed: EmbedCopy;
+  leave: EmbedCopy;
+  code: EmbedCopy;
+};
+
+export type ActivityLog = {
+  id: string;
+  at: string;
+  scrimId: string | null;
+  kind: string;
+  summary: string;
+  detail: string;
+};
+
 export type Scrim = {
   id: string;
   name: string;
@@ -76,6 +101,7 @@ export type Scrim = {
   templateId: string;
   templateName: string;
   dropsOpen: boolean;
+  embeds: ScrimEmbeds;
 };
 
 export type MapTemplate = {
@@ -95,6 +121,8 @@ export type Invite = {
   createdAt: string;
   dropped: boolean;
   fortniteNick: string;
+  droppedAt: string | null;
+  dropName: string | null;
 };
 
 export type BlacklistEntry = {
@@ -113,6 +141,7 @@ type StoreFile = {
   invites: Invite[];
   templates: MapTemplate[];
   blacklist: BlacklistEntry[];
+  logs: ActivityLog[];
 };
 
 export function dataDir(): string {
@@ -145,7 +174,70 @@ function defaultTemplates(): MapTemplate[] {
 }
 
 function emptyStore(): StoreFile {
-  return { scrims: [], invites: [], templates: defaultTemplates(), blacklist: [] };
+  return { scrims: [], invites: [], templates: defaultTemplates(), blacklist: [], logs: [] };
+}
+
+export function defaultEmbeds(): ScrimEmbeds {
+  return {
+    registration: {
+      title: "Check-in da closed",
+      color: "#3ee0a2",
+      footer: "{name}",
+      description:
+        "{windows}\n\n**{teams}/{max}** times na lista.\n\nClique em **Registrar** (só você vê a confirmação).\nDepois do check-in você libera **chat** + **dropmap**.\nCódigo da partida e getting-off só depois de **marcar o drop** no mapa.",
+    },
+    dropmapOpen: {
+      title: "Marque seu drop no mapa",
+      color: "#3b82f6",
+      footer: "{name}",
+      description:
+        "Depois do check-in, este é o **único** passo obrigatório.\n\n1. Clique em **Abrir mapa** e entre com o **mesmo Discord**.\n2. Passe o mouse nas áreas, clique no POI e **confirme**.\n3. Só depois disso o Discord libera **código** e **getting-off**.\n\nO mapa atualiza ao vivo. Você pode trocar o drop até a staff fechar.",
+    },
+    dropmapClosed: {
+      title: "Marcação fechada",
+      color: "#111111",
+      footer: "{name}",
+      description:
+        "A staff **fechou** a marcação. Quem já marcou continua vendo o mapa ao vivo. Canais de código e getting-off só para quem já confirmou o drop.",
+    },
+    leave: {
+      title: "Sair da scrim",
+      color: "#ff5c5c",
+      footer: "{name}",
+      description:
+        "Saída livre até **{leaveUntil}** (horário de Brasília).\nDepois disso, confirmar a saída gera **ban da closed**. Punição: **{punishHours}h**.",
+    },
+    code: {
+      title: "Código da partida",
+      color: "#c8f542",
+      footer: "{name}",
+      description: "`{code}`",
+    },
+  };
+}
+
+export function applyEmbedVars(text: string, vars: Record<string, string>): string {
+  return text.replace(/\{(\w+)\}/g, (_, key: string) => vars[key] ?? "");
+}
+
+function normalizeEmbeds(raw?: Partial<ScrimEmbeds> | null): ScrimEmbeds {
+  const base = defaultEmbeds();
+  const pick = (key: keyof ScrimEmbeds): EmbedCopy => {
+    const item = raw?.[key];
+    return {
+      title: item?.title?.trim() || base[key].title,
+      description: item?.description?.trim() || base[key].description,
+      color: item?.color?.trim() || base[key].color,
+      footer: item?.footer?.trim() || base[key].footer,
+    };
+  };
+  return {
+    registration: pick("registration"),
+    dropmapOpen: pick("dropmapOpen"),
+    dropmapClosed: pick("dropmapClosed"),
+    leave: pick("leave"),
+    code: pick("code"),
+  };
 }
 
 function legacySquare(x: number, y: number, radius = 3.2): Vertex[] {
@@ -203,6 +295,7 @@ function normalizeScrim(raw: Scrim): Scrim {
     templateId: raw.templateId ?? "",
     templateName: raw.templateName ?? "",
     dropsOpen: raw.dropsOpen !== false,
+    embeds: normalizeEmbeds(raw.embeds),
   };
 }
 
@@ -228,12 +321,15 @@ function readDisk(): StoreFile {
         ...invite,
         dropped: Boolean(invite.dropped),
         fortniteNick: invite.fortniteNick ?? "",
+        droppedAt: invite.droppedAt ?? null,
+        dropName: invite.dropName ?? null,
       })),
       templates:
         Array.isArray(parsed.templates) && parsed.templates.length > 0
           ? parsed.templates.map(normalizeTemplate)
           : defaultTemplates(),
       blacklist: parsed.blacklist ?? [],
+      logs: parsed.logs ?? [],
     };
   } catch {
     return emptyStore();
@@ -254,6 +350,32 @@ function persist(): void {
   const tmp = `${filePath}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(store, null, 2));
   fs.renameSync(tmp, filePath);
+  publish({ type: "store" });
+}
+
+export function addLog(input: {
+  scrimId?: string | null;
+  kind: string;
+  summary: string;
+  detail?: string;
+}): ActivityLog {
+  const store = getStore();
+  const log: ActivityLog = {
+    id: randomUUID(),
+    at: new Date().toISOString(),
+    scrimId: input.scrimId ?? null,
+    kind: input.kind,
+    summary: input.summary,
+    detail: input.detail ?? input.summary,
+  };
+  store.logs = [log, ...(store.logs ?? [])].slice(0, 400);
+  persist();
+  return log;
+}
+
+export function listLogs(scrimId?: string, limit = 80): ActivityLog[] {
+  const rows = (getStore().logs ?? []).filter((item) => !scrimId || item.scrimId === scrimId);
+  return rows.slice(0, limit);
 }
 
 export function cloneDrops(drops: DropSpot[]): DropSpot[] {
@@ -421,9 +543,16 @@ export function createScrim(input: {
     templateId: template.id,
     templateName: template.name,
     dropsOpen: true,
+    embeds: defaultEmbeds(),
   };
   store.scrims.push(scrim);
   persist();
+  addLog({
+    scrimId: scrim.id,
+    kind: "scrim",
+    summary: `Scrim criada: ${scrim.name}`,
+    detail: `${scrim.mode} · ${scrim.maxSlots} times · ${scrim.guildName}`,
+  });
   return scrim;
 }
 
@@ -504,9 +633,17 @@ export function addInvite(input: {
     createdAt: new Date().toISOString(),
     dropped: false,
     fortniteNick,
+    droppedAt: null,
+    dropName: null,
   };
   store.invites.push(invite);
   persist();
+  addLog({
+    scrimId: input.scrimId,
+    kind: "checkin",
+    summary: `${input.displayName} fez check-in`,
+    detail: `Nick ${fortniteNick} · ID ${input.discordUserId} · time ${teamName}`,
+  });
   return invite;
 }
 
@@ -533,10 +670,20 @@ export function removePlayer(scrimId: string, discordUserId: string): Invite | n
   }
   store.invites = store.invites.filter((item) => item.id !== invite.id);
   persist();
+  addLog({
+    scrimId,
+    kind: "remove",
+    summary: `${invite.displayName} saiu da lista`,
+    detail: `ID ${invite.discordUserId} · nick ${invite.fortniteNick}`,
+  });
   return invite;
 }
 
-export function markDropped(scrimId: string, discordUserId: string): Invite | null {
+export function markDropped(
+  scrimId: string,
+  discordUserId: string,
+  dropName?: string,
+): Invite | null {
   const store = getStore();
   const invite = store.invites.find(
     (item) => item.scrimId === scrimId && item.discordUserId === discordUserId,
@@ -545,6 +692,10 @@ export function markDropped(scrimId: string, discordUserId: string): Invite | nu
     return null;
   }
   invite.dropped = true;
+  invite.droppedAt = invite.droppedAt ?? new Date().toISOString();
+  if (dropName) {
+    invite.dropName = dropName;
+  }
   persist();
   return invite;
 }
@@ -607,7 +758,21 @@ export function claimDrop(
   drop.claimedByUserId = claimant?.userId ?? null;
   drop.claimedByName = claimant?.displayName ?? null;
   drop.claimedByAvatarUrl = claimant?.avatarUrl ?? null;
+  const now = new Date().toISOString();
+  for (const invite of store.invites) {
+    if (invite.scrimId === scrimId && invite.teamName === teamName) {
+      invite.dropped = true;
+      invite.dropName = drop.name;
+      invite.droppedAt = now;
+    }
+  }
   persist();
+  addLog({
+    scrimId,
+    kind: "drop",
+    summary: `${claimant?.displayName || teamName} marcou ${drop.name}`,
+    detail: `Time ${teamName} · drop ${drop.name} · user ${claimant?.userId ?? "—"}`,
+  });
   return drop;
 }
 
@@ -651,6 +816,12 @@ export function addBlacklist(input: {
   };
   store.blacklist.push(entry);
   persist();
+  addLog({
+    scrimId: input.scrimId,
+    kind: "blacklist",
+    summary: `${input.displayName} entrou na blacklist`,
+    detail: `Nick ${input.fortniteNick} · ${input.hours}h · ${input.reason}`,
+  });
   return entry;
 }
 
@@ -673,5 +844,11 @@ export function deleteScrim(id: string): Scrim | null {
   store.scrims = store.scrims.filter((item) => item.id !== id);
   store.invites = store.invites.filter((invite) => invite.scrimId !== id);
   persist();
+  addLog({
+    scrimId: id,
+    kind: "scrim",
+    summary: `Scrim apagada: ${scrim.name}`,
+    detail: `ID ${id}`,
+  });
   return normalizeScrim(scrim);
 }

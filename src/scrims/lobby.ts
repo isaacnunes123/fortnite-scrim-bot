@@ -12,7 +12,19 @@ import {
 } from "discord.js";
 import { getGuild } from "../bot/guild.js";
 import { dropMapUrl } from "./links.js";
-import { claimDrop, getScrim, listInvites, markDropped, nextLobbyNumber, patchScrim, teamCount, type DiscordLobby, type Scrim } from "./store.js";
+import {
+  applyEmbedVars,
+  claimDrop,
+  getScrim,
+  listInvites,
+  markDropped,
+  nextLobbyNumber,
+  patchScrim,
+  teamCount,
+  type DiscordLobby,
+  type EmbedCopy,
+  type Scrim,
+} from "./store.js";
 import { clockMinutes, parseClock } from "./time.js";
 
 
@@ -46,8 +58,38 @@ function roleView(roleId: string, send: boolean): OverwriteResolvable {
   };
 }
 
+function parseColor(hex: string, fallback: number): number {
+  const value = Number.parseInt(hex.replace("#", ""), 16);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function scrimVars(scrim: Scrim, extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    name: scrim.name,
+    teams: String(teamCount(scrim.id)),
+    max: String(scrim.maxSlots),
+    windows: extra.windows ?? "",
+    url: dropMapUrl(scrim.id),
+    leaveUntil: scrim.leaveUntil || "não definido",
+    punishHours: String(scrim.punishHours),
+    code: scrim.matchCode || "—",
+    ...extra,
+  };
+}
+
+function embedFrom(copy: EmbedCopy, vars: Record<string, string>, fallbackColor: number) {
+  const footer = applyEmbedVars(copy.footer, vars).slice(0, 2048);
+  const embed = new EmbedBuilder()
+    .setColor(parseColor(copy.color, fallbackColor))
+    .setTitle(applyEmbedVars(copy.title, vars).slice(0, 256) || "Scrim")
+    .setDescription(applyEmbedVars(copy.description, vars).slice(0, 4096) || "—");
+  if (footer) {
+    embed.setFooter({ text: footer });
+  }
+  return embed;
+}
+
 export function registrationEmbed(scrim: Scrim, guild: Guild) {
-  const teams = teamCount(scrim.id);
   const lines = scrim.windows.map((window) => {
     if (!window.roleId) {
       return `Quem **não** tem os cargos de prioridade registra às \`${window.time}\``;
@@ -55,22 +97,7 @@ export function registrationEmbed(scrim: Scrim, guild: Guild) {
     const role = guild.roles.cache.get(window.roleId);
     return `${role ?? `<@&${window.roleId}>`} registra às \`${window.time}\``;
   });
-
-  return new EmbedBuilder()
-    .setColor(0x3ee0a2)
-    .setTitle("Check-in da closed")
-    .setDescription(
-      [
-        `${lines.join("\n")}`,
-        "",
-        `**${teams}/${scrim.maxSlots}** times na lista.`,
-        "",
-        "Clique em **Registrar** (só você vê a confirmação).",
-        "Depois do check-in você libera **chat** + **dropmap**.",
-        "Código da partida e getting-off só depois de **marcar o drop** no mapa.",
-      ].join("\n"),
-    )
-    .setFooter({ text: scrim.name });
+  return embedFrom(scrim.embeds.registration, scrimVars(scrim, { windows: lines.join("\n") }), 0x3ee0a2);
 }
 
 export function registrationRow(scrimId: string) {
@@ -83,13 +110,7 @@ export function registrationRow(scrimId: string) {
 }
 
 export function leaveEmbed(scrim: Scrim) {
-  const description = scrim.leaveUntil
-    ? `Saída livre até **${scrim.leaveUntil}** (horário de Brasília).\nDepois disso, confirmar a saída gera **ban da closed** (blacklist). Punição: **${scrim.punishHours}h**.`
-    : "A staff ainda **não definiu** o horário de checkout.\nEste canal só aparece depois de marcar o drop no mapa.";
-  return new EmbedBuilder()
-    .setColor(0xff5c5c)
-    .setTitle("Sair da scrim")
-    .setDescription(description);
+  return embedFrom(scrim.embeds.leave, scrimVars(scrim), 0xff5c5c);
 }
 
 export function leaveRow(scrimId: string) {
@@ -292,27 +313,9 @@ export async function provisionLobby(client: Client, scrim: Scrim): Promise<Scri
 function dropMapPayload(scrim: Scrim) {
   const url = dropMapUrl(scrim.id);
   const open = scrim.dropsOpen !== false;
+  const copy = open ? scrim.embeds.dropmapOpen : scrim.embeds.dropmapClosed;
   return {
-    embeds: [
-      new EmbedBuilder()
-        .setColor(open ? 0x3b82f6 : 0x111111)
-        .setTitle(open ? "Marque seu drop no mapa" : "Marcação fechada")
-        .setDescription(
-          open
-            ? [
-                "Depois do check-in, este é o **único** passo obrigatório.",
-                "",
-                "1. Clique em **Abrir mapa** e entre com o **mesmo Discord**.",
-                "2. Passe o mouse nas áreas, clique no POI e **confirme**.",
-                "3. Só depois disso o Discord libera os canais de **código** e **getting-off**.",
-                "",
-                "O mapa atualiza ao vivo. Você pode trocar o drop até a staff fechar.",
-              ].join("\n")
-            : "A staff **fechou** a marcação. Quem já marcou continua vendo o mapa ao vivo. Canais de código e getting-off só para quem já confirmou o drop.",
-        )
-        .setURL(url)
-        .setFooter({ text: scrim.name }),
-    ],
+    embeds: [embedFrom(copy, scrimVars(scrim), open ? 0x3b82f6 : 0x111111).setURL(url)],
     components: [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
@@ -412,7 +415,7 @@ export async function applyPlayerDrop(
   });
   const team = listInvites(scrimId).filter((item) => item.teamName === invite.teamName);
   for (const memberInvite of team) {
-    markDropped(scrimId, memberInvite.discordUserId);
+    markDropped(scrimId, memberInvite.discordUserId, drop.name);
     const member = await guild.members.fetch(memberInvite.discordUserId).catch(() => null);
     if (member && scrim.discord) {
       await member.roles.add(scrim.discord.confirmedRoleId).catch(() => undefined);
@@ -453,12 +456,7 @@ export async function postMatchCode(client: Client, scrim: Scrim): Promise<void>
     return;
   }
   await (channel as TextChannel).send({
-    embeds: [
-      new EmbedBuilder()
-        .setColor(0xc8f542)
-        .setTitle("Código da partida")
-        .setDescription(`\`${scrim.matchCode}\``),
-    ],
+    embeds: [embedFrom(scrim.embeds.code, scrimVars(scrim), 0xc8f542)],
   });
 }
 
