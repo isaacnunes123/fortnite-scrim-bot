@@ -159,7 +159,9 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
                   onChange={(event) => updateLocal({ name: event.target.value })}
                 />
                 <p className="muted">
-                  Desenhe as áreas, depois clique em salvar. Nas scrims você só escolhe este preset.
+                  Desenhe as áreas, depois clique em salvar. Use uma imagem **limpa** da ilha, sem
+                  print da HUD do Fortnite (aquele círculo cinza no canto). Nas scrims você só
+                  escolhe este preset.
                 </p>
                 {saved ? <p className="ok-text">{saved}</p> : null}
                 {dirty ? <p className="muted">Há alterações sem salvar.</p> : null}

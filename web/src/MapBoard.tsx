@@ -174,20 +174,6 @@ export function MapBoard({
                   />
                 ))
               : null}
-            {play
-              ? drops.map((drop) => (
-                  <g key={`${drop.id}-face`}>
-                    <circle
-                      cx={drop.x}
-                      cy={drop.y}
-                      r={hoverId === drop.id || selectedId === drop.id ? 7.4 : 5.6}
-                      className={`drop-hit ${drop.claimedByTeam ? "taken" : "idle"} ${
-                        drop.claimedByTeam === myTeam ? "mine" : ""
-                      } ${hoverId === drop.id ? "hot" : ""}`}
-                    />
-                  </g>
-                ))
-              : null}
             {draft.length >= 2 ? (
               <polyline
                 points={polygonPoints(draft)}
