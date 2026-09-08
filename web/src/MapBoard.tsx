@@ -188,43 +188,45 @@ export function MapBoard({
             ) : null}
           </svg>
           {drops.map((drop) =>
-            drop.claimedByAvatarUrl ? (
+            drop.claimedByTeam || drop.claimedByAvatarUrl ? (
               <img
                 key={`${drop.id}-avatar`}
                 className={`drop-face ${drop.claimedByTeam === myTeam ? "mine" : ""}`}
-                src={drop.claimedByAvatarUrl}
+                src={
+                  drop.claimedByAvatarUrl ||
+                  `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(drop.claimedByUserId || "0") % 5n)}.png`
+                }
                 alt={drop.claimedByName || drop.claimedByTeam || "Player"}
+                referrerPolicy="no-referrer"
                 style={{ left: `${drop.x}%`, top: `${drop.y}%` }}
               />
             ) : null,
           )}
-          {drops.map((drop) =>
-            play ? (
+          {drops.map((drop) => (
               <button
                 key={`${drop.id}-label`}
                 type="button"
                 className={`drop-pin kind-${drop.kind} ${drop.claimedByTeam ? "taken" : ""} ${
                   drop.claimedByTeam === myTeam ? "mine" : ""
-                } clickable ${hoverId === drop.id ? "hot" : ""}`}
+                } ${play ? "clickable" : ""} ${hoverId === drop.id ? "hot" : ""}`}
                 style={{ left: `${drop.x}%`, top: `${drop.y}%` }}
                 onClick={(event) => {
                   event.stopPropagation();
                   onPick?.(drop);
                 }}
               >
-                <b>{drop.name}</b>
-                <span>{drop.claimedByName || drop.claimedByTeam || "livre"}</span>
+                {drop.claimedByAvatarUrl ? (
+                  <img
+                    className="drop-pin-face"
+                    src={drop.claimedByAvatarUrl}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                  />
+                ) : null}
+                <b>{drop.claimedByName || drop.claimedByTeam || drop.name}</b>
+                <span>{drop.claimedByTeam ? drop.name : play ? "livre" : drop.name}</span>
               </button>
-            ) : (
-              <span
-                key={`${drop.id}-label`}
-                className={`drop-pin kind-${drop.kind} ${drop.claimedByTeam ? "taken" : ""}`}
-                style={{ left: `${drop.x}%`, top: `${drop.y}%` }}
-              >
-                {drop.name}
-              </span>
-            ),
-          )}
+            ))}
           {draft.map((vertex, index) => (
             <span
               key={`d-${index}`}

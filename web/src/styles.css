@@ -1,17 +1,18 @@
 :root {
-  --bg: #050507;
-  --bg-elevated: #0c0c10;
-  --bg-panel: #121218;
-  --line: rgba(255, 255, 255, 0.1);
-  --text: #f7f8fb;
-  --muted: #9aa3b2;
-  --accent: #3b82f6;
-  --accent-dim: #2563eb;
-  --accent-soft: rgba(59, 130, 246, 0.16);
-  --danger: #f87171;
-  --ok: #93c5fd;
+  --bg: #07000c;
+  --bg-elevated: #120018;
+  --bg-panel: #1a0026;
+  --line: rgba(209, 0, 209, 0.28);
+  --text: #f7f2ff;
+  --muted: #b79bc4;
+  --accent: #d100d1;
+  --accent-dim: #8b008b;
+  --accent-soft: rgba(209, 0, 209, 0.18);
+  --cyan: #5ef2ff;
+  --danger: #ff5c8a;
+  --ok: #e9a8ff;
   --warn: #d4d4d8;
-  --shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+  --shadow: 0 20px 50px rgba(80, 0, 90, 0.45);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -29,18 +30,20 @@ body {
   margin: 0;
   color: var(--text);
   background:
-    radial-gradient(900px 420px at 8% -8%, rgba(59, 130, 246, 0.14), transparent 52%),
-    radial-gradient(700px 360px at 100% 0%, rgba(255, 255, 255, 0.04), transparent 48%),
+    linear-gradient(180deg, rgba(7, 0, 12, 0.55), rgba(7, 0, 12, 0.88)),
+    url("/brand/banner.jpg") center top / cover no-repeat,
     var(--bg);
-  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  background-attachment: fixed;
+  font-family: "Barlow", system-ui, sans-serif;
 }
 
 h1,
 h2,
 h3,
-.brand {
-  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
-  letter-spacing: -0.03em;
+.brand strong {
+  font-family: "Barlow Condensed", "Barlow", system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 button,
@@ -78,13 +81,13 @@ select {
 
 @keyframes pulse-live {
   0% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.55);
+    box-shadow: 0 0 0 0 rgba(209, 0, 209, 0.55);
   }
   70% {
-    box-shadow: 0 0 0 8px rgba(59, 130, 246, 0);
+    box-shadow: 0 0 0 8px rgba(209, 0, 209, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    box-shadow: 0 0 0 0 rgba(209, 0, 209, 0);
   }
 }
 
@@ -100,6 +103,21 @@ select {
 
 .brand {
   display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-logo {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgba(209, 0, 209, 0.45);
+}
+
+.brand-copy {
+  display: flex;
   flex-direction: column;
   gap: 2px;
 }
@@ -112,6 +130,8 @@ select {
 .brand span {
   color: var(--muted);
   font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .card {
@@ -128,7 +148,8 @@ select {
 }
 
 .card:hover {
-  border-color: rgba(59, 130, 246, 0.28);
+  border-color: rgba(209, 0, 209, 0.55);
+  box-shadow: 0 0 24px rgba(209, 0, 209, 0.18);
 }
 
 .grid {
@@ -148,7 +169,7 @@ select {
 
 .stat:hover {
   transform: translateY(-2px);
-  border-color: rgba(59, 130, 246, 0.35);
+  border-color: rgba(209, 0, 209, 0.35);
 }
 
 .stat label {
@@ -199,7 +220,7 @@ select {
 .pill.live {
   color: var(--accent);
   background: var(--accent-soft);
-  border-color: rgba(59, 130, 246, 0.35);
+  border-color: rgba(209, 0, 209, 0.35);
 }
 
 .pill.live::before {
@@ -215,9 +236,29 @@ select {
 }
 
 .login .card {
-  width: min(420px, 100%);
+  width: min(440px, 100%);
   position: relative;
   overflow: hidden;
+  padding-top: 0;
+}
+
+.login-banner {
+  width: calc(100% + 48px);
+  max-width: none;
+  margin: 0 -24px 16px;
+  height: 120px;
+  object-fit: cover;
+  display: block;
+}
+
+.login-logo {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  margin: -48px 0 12px;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 0 0 3px #000, 0 0 20px rgba(209, 0, 209, 0.7);
 }
 
 .login .card::before {
@@ -292,8 +333,8 @@ select:focus {
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--accent-dim);
-  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.28);
+  background: #ff2bff;
+  box-shadow: 0 0 18px rgba(209, 0, 209, 0.55);
 }
 
 .btn:active:not(:disabled) {
@@ -309,7 +350,7 @@ select:focus {
 
 .btn.secondary:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(59, 130, 246, 0.45);
+  border-color: rgba(209, 0, 209, 0.45);
   box-shadow: none;
 }
 
@@ -449,7 +490,7 @@ select:focus {
 }
 
 .team:hover {
-  border-color: rgba(59, 130, 246, 0.3);
+  border-color: rgba(209, 0, 209, 0.3);
 }
 
 .team h3 {
@@ -539,7 +580,7 @@ select:focus {
   z-index: 3;
   background: rgba(5, 5, 7, 0.86);
   color: #fff;
-  border: 1px solid rgba(59, 130, 246, 0.55);
+  border: 1px solid rgba(209, 0, 209, 0.55);
   border-radius: 8px;
   padding: 8px 14px;
   font-size: 13px;
@@ -583,7 +624,7 @@ select:focus {
 }
 
 .drop-poly {
-  fill: rgba(59, 130, 246, 0.1);
+  fill: rgba(209, 0, 209, 0.1);
   stroke: rgba(96, 165, 250, 0.85);
   stroke-width: 0.28;
   transition: fill 0.25s var(--ease), stroke 0.25s var(--ease), opacity 0.25s var(--ease);
@@ -596,10 +637,10 @@ select:focus {
 @keyframes poi-breathe {
   0%,
   100% {
-    fill: rgba(59, 130, 246, 0.2);
+    fill: rgba(209, 0, 209, 0.2);
   }
   50% {
-    fill: rgba(59, 130, 246, 0.42);
+    fill: rgba(209, 0, 209, 0.42);
   }
 }
 
@@ -616,12 +657,12 @@ select:focus {
 }
 
 .drop-poly.kind-locked {
-  fill: rgba(59, 130, 246, 0.12);
+  fill: rgba(209, 0, 209, 0.12);
   stroke: #93c5fd;
 }
 
 .drop-poly.taken {
-  fill: rgba(59, 130, 246, 0.16);
+  fill: rgba(209, 0, 209, 0.16);
   stroke: #fff;
 }
 
@@ -630,7 +671,7 @@ select:focus {
 }
 
 .drop-hit {
-  fill: rgba(59, 130, 246, 0.22);
+  fill: rgba(209, 0, 209, 0.22);
   stroke: #60a5fa;
   stroke-width: 0.45;
   transition: r 0.18s var(--ease), fill 0.18s var(--ease);
@@ -643,12 +684,12 @@ select:focus {
 
 .drop-hit.mine,
 .drop-poly.mine {
-  fill: rgba(59, 130, 246, 0.42);
+  fill: rgba(209, 0, 209, 0.42);
   stroke: #93c5fd;
 }
 
 .drop-hit.hot {
-  fill: rgba(59, 130, 246, 0.4);
+  fill: rgba(209, 0, 209, 0.4);
 }
 
 .drop-hit.idle {
@@ -680,13 +721,13 @@ select:focus {
 }
 
 .draft-fill {
-  fill: rgba(59, 130, 246, 0.22);
+  fill: rgba(209, 0, 209, 0.22);
   stroke: #60a5fa;
   stroke-width: 0.35;
 }
 
 .draft-fill.closed {
-  fill: rgba(59, 130, 246, 0.32);
+  fill: rgba(209, 0, 209, 0.32);
 }
 
 .map-handle {
@@ -723,6 +764,14 @@ select:focus {
   line-height: 1.15;
   max-width: 120px;
   backdrop-filter: blur(6px);
+}
+
+.drop-pin-face {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-bottom: 2px;
 }
 
 .drop-pin span {
@@ -896,7 +945,7 @@ select:focus {
   margin: 0 0 16px;
   padding: 12px 12px 12px 32px;
   background: var(--accent-soft);
-  border: 1px solid rgba(59, 130, 246, 0.28);
+  border: 1px solid rgba(209, 0, 209, 0.28);
   border-radius: 12px;
 }
 
@@ -910,7 +959,7 @@ select:focus {
 
 @keyframes claim-flash {
   0% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.55);
+    box-shadow: 0 0 0 0 rgba(209, 0, 209, 0.55);
   }
   100% {
     box-shadow: var(--shadow);
@@ -937,7 +986,7 @@ select:focus {
 }
 
 .roster li.has-drop {
-  background: rgba(59, 130, 246, 0.06);
+  background: rgba(209, 0, 209, 0.06);
   margin: 0 -12px;
   padding-left: 12px;
   padding-right: 12px;

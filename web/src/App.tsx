@@ -183,9 +183,10 @@ export function App() {
     return (
       <div className="login">
         <div className="card">
-          <div className="login-mark" aria-hidden="true" />
-          <h1>Scrim Hub</h1>
-          <p>Painel do bot de torneios fechados para treinos no Fortnite.</p>
+          <img src="/brand/banner.jpg" alt="BUILD CLOSED" className="login-banner" />
+          <img src="/brand/logo.png" alt="" className="login-logo" />
+          <h1>BUILD CLOSED</h1>
+          <p>Painel de scrims fechadas. Treino no Fortnite.</p>
           {error ? <p className="error">{error}</p> : null}
           {auth.discordLogin ? (
             <>
@@ -221,8 +222,11 @@ export function App() {
     <div className="shell">
       <header className="topbar">
         <button className="brand linkish" type="button" onClick={() => setView({ page: "home" })}>
-          <strong>Scrim Hub</strong>
-          <span>Torneios fechados · Fortnite</span>
+          <img src="/brand/logo.png" alt="" className="brand-logo" />
+          <span className="brand-copy">
+            <strong>BUILD CLOSED</strong>
+            <span>Scrims fechadas · Fortnite</span>
+          </span>
         </button>
         <div className="actions">
           <button className="btn secondary" type="button" onClick={() => setView({ page: "presets" })}>
@@ -1040,7 +1044,7 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
                 onClick={() => setOpenId(openId === member.id ? null : member.id)}
               >
                 {member.avatarUrl ? (
-                  <img src={member.avatarUrl} alt="" className="roster-face" />
+                    <img src={member.avatarUrl} alt="" className="roster-face" referrerPolicy="no-referrer" />
                 ) : (
                   <span className="roster-face empty" />
                 )}

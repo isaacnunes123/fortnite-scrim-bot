@@ -408,10 +408,16 @@ export async function applyPlayerDrop(
   }
   const guild = await client.guilds.fetch(scrim.guildId);
   const marker = await guild.members.fetch({ user: userId, force: true }).catch(() => null);
+  const user = marker?.user ?? (await client.users.fetch(userId).catch(() => null));
+  const displayName = marker?.displayName || user?.globalName || user?.username || invite.displayName;
+  const avatarUrl =
+    marker?.displayAvatarURL({ size: 128, extension: "png", forceStatic: true }) ||
+    user?.displayAvatarURL({ size: 128, extension: "png", forceStatic: true }) ||
+    `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(userId) % 5n)}.png`;
   const drop = claimDrop(scrimId, dropId, invite.teamName, {
     userId,
-    displayName: marker?.displayName || invite.displayName,
-    avatarUrl: marker?.displayAvatarURL({ size: 64, extension: "png" }) ?? "",
+    displayName,
+    avatarUrl,
   });
   const team = listInvites(scrimId).filter((item) => item.teamName === invite.teamName);
   for (const memberInvite of team) {
@@ -422,10 +428,10 @@ export async function applyPlayerDrop(
     }
   }
   await syncLobbyAccess(client, scrim).catch(() => undefined);
-  if (marker) {
+  if (marker || user) {
     const codeMention = `<#${scrim.discord.codeId}>`;
     const leaveMention = `<#${scrim.discord.leaveId}>`;
-    await marker
+    await (marker ?? user)!
       .send({
         embeds: [
           new EmbedBuilder()

@@ -136,10 +136,13 @@ export function PlayerMap() {
     <div className={`shell player-map ${flash ? "just-claimed" : ""}`}>
       <header className="topbar">
         <div className="brand">
-          <strong>Marcar drop</strong>
-          <span>
-            {name} · nick {fortniteNick}
-            {mine ? ` · drop ${mine.name}` : " · ainda sem drop"}
+          <img src="/brand/logo.png" alt="" className="brand-logo" />
+          <span className="brand-copy">
+            <strong>BUILD CLOSED</strong>
+            <span>
+              {name} · {fortniteNick}
+              {mine ? ` · drop ${mine.name}` : " · ainda sem drop"}
+            </span>
           </span>
         </div>
         <span className="pill live">Ao vivo · {claimed}/{drops.length}</span>
