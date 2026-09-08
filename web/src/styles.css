@@ -695,14 +695,16 @@ select:focus {
   stroke: #93c5fd;
 }
 
-.drop-poly.taken {
-  fill: rgba(209, 0, 209, 0.16);
-  stroke: #fff;
+.drop-poly.taken,
+.drop-poly.full {
+  fill: rgba(255, 36, 36, 0.32);
+  stroke: #ff2a2a;
+  stroke-width: 0.28;
 }
 
-.drop-poly.full {
-  fill: rgba(239, 68, 68, 0.2);
-  stroke: #ef4444;
+.drop-poly.mine {
+  fill: rgba(255, 36, 36, 0.42);
+  stroke: #ff4d4d;
 }
 
 .map-board.play {
@@ -723,8 +725,8 @@ select:focus {
 
 .drop-hit.mine,
 .drop-poly.mine {
-  fill: rgba(209, 0, 209, 0.42);
-  stroke: #93c5fd;
+  fill: rgba(255, 36, 36, 0.42);
+  stroke: #ff4d4d;
 }
 
 .drop-hit.hot {
@@ -784,6 +786,67 @@ select:focus {
   width: 13px;
   height: 13px;
   box-shadow: 0 0 0 2px var(--accent);
+}
+
+.drop-layer {
+  display: contents;
+}
+
+.drop-markers {
+  position: absolute;
+  z-index: 3;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transform: translate(-50%, -42%);
+  pointer-events: none;
+}
+
+.map-board.zoomed .drop-markers {
+  display: flex;
+}
+
+.drop-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.drop-marker-face {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.65);
+  background: #111;
+}
+
+.drop-marker-name {
+  max-width: 120px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.05;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow:
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000,
+    0 0 5px #000;
+}
+
+.map-board.zoomed .drop-pin.has-claims {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .drop-pin {

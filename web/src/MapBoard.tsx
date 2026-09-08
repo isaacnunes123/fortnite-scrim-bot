@@ -278,7 +278,10 @@ export function MapBoard({
               transform: `translate(${pan.x}px, ${pan.y}px)`,
             }}
           >
-            <div ref={boardRef} className={`map-board ${play ? "play" : ""}`}>
+            <div
+              ref={boardRef}
+              className={`map-board ${play ? "play" : ""} ${zoom >= 1.2 ? "zoomed" : ""}`}
+            >
               <img
                 className="map-art"
                 src={src}
@@ -325,63 +328,52 @@ export function MapBoard({
                   <polygon points={polygonPoints(draft)} className="draft-fill" />
                 ) : null}
               </svg>
-              {drops.flatMap((drop) =>
-                listDropClaims(drop).map((claim, index) => (
-                  <img
-                    key={`${drop.id}-avatar-${claim.teamName}-${index}`}
-                    className={`drop-face ${claim.teamName === myTeam ? "mine" : ""}`}
-                    src={
-                      claim.avatarUrl ||
-                      `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(claim.userId || "0") % 5n)}.png`
-                    }
-                    alt={claim.displayName || claim.teamName}
-                    referrerPolicy="no-referrer"
-                    style={{
-                      left: `${drop.x}%`,
-                      top: `${drop.y}%`,
-                      transform: `translate(calc(-50% + ${index * 10}px), -120%)`,
-                    }}
-                  />
-                )),
-              )}
               {drops.map((drop) => {
                 const claims = listDropClaims(drop);
                 const mine = teamOnDrop(drop, myTeam ?? "");
                 const full = claims.length >= occupancyLimit;
-                const label = claims.length
-                  ? claims.length > 1
-                    ? `${claims.length}/${occupancyLimit} times`
-                    : claims[0]?.displayName || claims[0]?.teamName || `Drop ${drop.name}`
-                  : play
-                    ? "livre"
-                    : `Drop ${drop.name}`;
                 return (
-                  <button
-                    key={`${drop.id}-label`}
-                    type="button"
-                    className={`drop-pin ${claims.length ? "taken" : ""} ${mine ? "mine" : ""} ${
-                      full ? "full" : ""
-                    } ${play ? "clickable" : ""} ${hoverId === drop.id ? "hot" : ""}`}
-                    style={{ left: `${drop.x}%`, top: `${drop.y}%` }}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onPick?.(drop);
-                    }}
-                  >
-                    {claims[0]?.avatarUrl ? (
-                      <img
-                        className="drop-pin-face"
-                        src={claims[0].avatarUrl}
-                        alt=""
-                        referrerPolicy="no-referrer"
-                      />
+                  <div key={`${drop.id}-markers`} className="drop-layer">
+                    {claims.length > 0 ? (
+                      <div
+                        className={`drop-markers ${mine ? "mine" : ""}`}
+                        style={{ left: `${drop.x}%`, top: `${drop.y}%` }}
+                      >
+                        {claims.map((claim, index) => (
+                          <div key={`${drop.id}-${claim.teamName}-${index}`} className="drop-marker">
+                            <img
+                              className="drop-marker-face"
+                              src={
+                                claim.avatarUrl ||
+                                `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(claim.userId || "0") % 5n)}.png`
+                              }
+                              alt=""
+                              referrerPolicy="no-referrer"
+                            />
+                            <b className="drop-marker-name">
+                              {(claim.displayName || claim.teamName || "Drop").trim()}
+                            </b>
+                          </div>
+                        ))}
+                      </div>
                     ) : null}
-                    <b>{drop.name}</b>
-                    <span>
-                      {`${label}${claims.length === 1 ? ` · ${claims.length}/${occupancyLimit}` : ""}`}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      className={`drop-pin ${claims.length ? "taken" : ""} ${mine ? "mine" : ""} ${
+                        full ? "full" : ""
+                      } ${play ? "clickable" : ""} ${hoverId === drop.id ? "hot" : ""} ${
+                        claims.length ? "has-claims" : ""
+                      }`}
+                      style={{ left: `${drop.x}%`, top: `${drop.y}%` }}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onPick?.(drop);
+                      }}
+                    >
+                      <b>{drop.name}</b>
+                    </button>
+                  </div>
                 );
               })}
               {draft.map((vertex, index) => (
