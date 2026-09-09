@@ -1,6 +1,6 @@
 import cookieParser from "cookie-parser";
 import express, { type Express, type Request, type Response } from "express";
-import { cookieOptions, clearCookieOptions, env } from "../env.js";
+import { clearCookieOptions, env } from "../env.js";
 import { discordRedirectUri, isAllowedPublicHost, publicBaseUrl } from "../scrims/links.js";
 import { resolvePublicMapUrl, savePresetMap, saveUploadedMap } from "../scrims/maps.js";
 import {
@@ -195,23 +195,14 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
   app.get("/api/auth/me", async (req, res) => {
     res.json({
       authenticated: await isStaffSession(req),
-      discordLogin: env.adminRoleIds.length > 0,
-      passwordLogin: env.adminRoleIds.length === 0,
+      discordLogin: true,
     });
   });
 
-  app.post("/api/auth/login", (req, res) => {
-    if (env.adminRoleIds.length > 0) {
-      res.status(403).json({ error: "Entre com Discord. O painel só libera cargos configurados." });
-      return;
-    }
-    const password = String(req.body?.password ?? "");
-    if (!env.adminPassword || password !== env.adminPassword) {
-      res.status(401).json({ error: "Senha incorreta" });
-      return;
-    }
-    res.cookie(COOKIE_NAME, "admin", cookieOptions(7 * 24 * 60 * 60 * 1000));
-    res.json({ ok: true });
+  app.post("/api/auth/login", (_req, res) => {
+    res.status(403).json({
+      error: "Login por senha foi desativado. Entre com Discord. Só quem tem o cargo de admin no servidor entra no painel.",
+    });
   });
 
   app.post("/api/auth/logout", (_req, res) => {

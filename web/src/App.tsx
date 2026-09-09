@@ -22,8 +22,6 @@ import { useBrandTheme } from "./brand";
 type AuthState = {
   checking: boolean;
   authenticated: boolean;
-  discordLogin: boolean;
-  passwordLogin: boolean;
 };
 
 type View = { page: "home" } | { page: "scrim"; id: string } | { page: "presets" } | { page: "tables" };
@@ -113,27 +111,16 @@ export function App() {
   const [auth, setAuth] = useState<AuthState>({
     checking: true,
     authenticated: false,
-    discordLogin: false,
-    passwordLogin: true,
   });
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<BotStatus | null>(null);
-  const [loading, setLoading] = useState(false);
   const [view, setView] = useState<View>({ page: "home" });
   const [scrims, setScrims] = useState<ScrimSummary[]>([]);
 
   async function refreshSession() {
-    const me = await api<{
-      authenticated: boolean;
-      discordLogin?: boolean;
-      passwordLogin?: boolean;
-    }>("/api/auth/me");
+    const me = await api<{ authenticated: boolean }>("/api/auth/me");
     setAuth({
       checking: false,
       authenticated: me.authenticated,
-      discordLogin: Boolean(me.discordLogin),
-      passwordLogin: me.passwordLogin !== false,
     });
     if (me.authenticated) {
       const bot = await api<BotStatus>("/api/bot/status");
@@ -145,27 +132,9 @@ export function App() {
 
   useEffect(() => {
     refreshSession().catch(() => {
-      setAuth({ checking: false, authenticated: false, discordLogin: false, passwordLogin: true });
+      setAuth({ checking: false, authenticated: false });
     });
   }, []);
-
-  async function onLogin(event: FormEvent) {
-    event.preventDefault();
-    setLoading(true);
-    setError(null);
-    try {
-      await api("/api/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ password }),
-      });
-      setPassword("");
-      await refreshSession();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível entrar");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function onLogout() {
     await api("/api/auth/logout", { method: "POST" });
@@ -175,8 +144,6 @@ export function App() {
     setAuth({
       checking: false,
       authenticated: false,
-      discordLogin: auth.discordLogin,
-      passwordLogin: auth.passwordLogin,
     });
   }
 
@@ -196,48 +163,22 @@ export function App() {
           <img src="/brand/logo.png" alt="" className="login-logo" />
           <h1>BUILD SCRIMS</h1>
           <p>Painel staff da comunidade BUILD SCRIMS.</p>
-          {error ? <p className="error">{error}</p> : null}
-          {auth.discordLogin ? (
-            <>
-              <p className="muted">Só entra quem tem o cargo liberado no Discord.</p>
-              <a className="btn" href="/api/auth/discord?next=admin">
-                Entrar com Discord
-              </a>
-              <a className="btn secondary" href="/">
-                Página inicial
-              </a>
-              <a className="btn secondary" href="/closed">
-                Closed
-              </a>
-              <a className="btn secondary" href="/tabelas">
-                Tabelas públicas
-              </a>
-            </>
-          ) : (
-            <form onSubmit={onLogin}>
-              <label htmlFor="password">Senha do painel</label>
-              <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-              <button className="btn" type="submit" disabled={loading}>
-                {loading ? "Entrando…" : "Entrar"}
-              </button>
-              <a className="btn secondary" href="/">
-                Página inicial
-              </a>
-              <a className="btn secondary" href="/closed">
-                Closed
-              </a>
-              <a className="btn secondary" href="/tabelas">
-                Tabelas públicas
-              </a>
-            </form>
-          )}
+          <p className="muted">
+            Entre com Discord. Só quem tem o cargo de admin no servidor da comunidade acessa o
+            painel.
+          </p>
+          <a className="btn" href="/api/auth/discord?next=admin">
+            Entrar com Discord
+          </a>
+          <a className="btn secondary" href="/">
+            Página inicial
+          </a>
+          <a className="btn secondary" href="/closed">
+            Closed
+          </a>
+          <a className="btn secondary" href="/tabelas">
+            Tabelas públicas
+          </a>
         </div>
       </div>
     );

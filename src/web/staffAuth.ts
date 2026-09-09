@@ -154,13 +154,10 @@ export async function memberHasAdminRole(userId: string): Promise<boolean> {
 
 export async function isStaffSession(req: Request): Promise<boolean> {
   const token = String(req.signedCookies?.[COOKIE_NAME] ?? "");
-  if (!token) {
+  if (!token.startsWith("discord:")) {
     return false;
   }
-  if (token.startsWith("discord:")) {
-    return memberHasAdminRole(token.slice("discord:".length));
-  }
-  return env.adminRoleIds.length === 0 && token === "admin";
+  return memberHasAdminRole(token.slice("discord:".length));
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {

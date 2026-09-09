@@ -19,7 +19,7 @@ copy .env.example .env
    - **General Information** → copie o Application ID para `DISCORD_CLIENT_ID`
    - Em **OAuth2 → URL Generator**, marque `bot` e a permissão de entrar no servidor, depois convide o bot
 
-3. Troque `ADMIN_PASSWORD` e `SESSION_SECRET` no `.env`
+3. Preencha `ADMIN_ROLE_IDS` (IDs dos cargos Discord da staff) e `SESSION_SECRET` no `.env`
 
 4. Instale e suba:
 
@@ -28,7 +28,7 @@ npm install
 npm run dev
 ```
 
-5. Abra [http://localhost:3000](http://localhost:3000) e entre com a senha do painel.
+5. Abra [http://localhost:3000](http://localhost:3000) e entre no painel com Discord. Só quem tem um cargo de `ADMIN_ROLE_IDS` no servidor entra.
 
 Sem `DISCORD_TOKEN` o site ainda abre; o card do bot fica offline até o token estar certo.
 
@@ -58,7 +58,7 @@ O frontend usa caminhos relativos (`/api/...`, `/tabelas`). A Vercel serve o HTM
 3. Na Vercel → **Domains**, o domínio `buildscrims.online` fica neste projeto.
 4. Variáveis na **Vercel** (Production + Preview):
    - `PUBLIC_BASE_URL=https://buildscrims.online`
-   - `SESSION_SECRET`, `ADMIN_PASSWORD`, `ADMIN_ROLE_IDS`
+   - `SESSION_SECRET`, `ADMIN_ROLE_IDS`
    - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_TOKEN`, `DISCORD_GUILD_ID`
    - `YUNITE_API_KEY`
    - `DATABASE_URL` (Neon — veja abaixo)
