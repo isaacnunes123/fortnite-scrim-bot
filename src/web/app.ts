@@ -58,8 +58,14 @@ import {
   removeInvite,
   saveScrimPreset,
   deleteScrimPreset,
+  deleteTable,
+  getTable,
+  listTables,
+  patchTable,
+  createTable,
   teamCount,
   type PriorityWindow,
+  type PublicTable,
 } from "../scrims/store.js";
 
 const COOKIE_NAME = "scrim_session";
@@ -80,6 +86,35 @@ function fail(res: Response, error: unknown, fallback: string): void {
 
 function withLiveMap<T extends { mapImageUrl: string }>(item: T): T {
   return { ...item, mapImageUrl: resolvePublicMapUrl(item.mapImageUrl).url };
+}
+
+function tablePayload(body: Record<string, unknown> | undefined): {
+  name?: string;
+  description?: string;
+  mode?: string;
+  live?: boolean;
+  scrimId?: string;
+  kind?: string;
+  yuniteTournamentId?: string;
+  rows?: unknown[];
+} {
+  const kind = String(body?.kind ?? "manual") === "yunite" ? "yunite" : "manual";
+  let yuniteTournamentId = String(body?.yuniteTournamentId ?? "").trim();
+  if (kind === "yunite") {
+    yuniteTournamentId = saveYuniteTournamentId(yuniteTournamentId);
+  } else {
+    yuniteTournamentId = "";
+  }
+  return {
+    name: body?.name != null ? String(body.name) : undefined,
+    description: body?.description != null ? String(body.description) : undefined,
+    mode: body?.mode != null ? String(body.mode) : undefined,
+    live: body?.live == null ? undefined : Boolean(body.live),
+    scrimId: body?.scrimId != null ? String(body.scrimId) : undefined,
+    kind,
+    yuniteTournamentId,
+    rows: Array.isArray(body?.rows) ? body.rows : undefined,
+  };
 }
 
 function parseWindows(raw: unknown): PriorityWindow[] {
@@ -577,6 +612,53 @@ export async function createWebApp() {
     } catch (error) {
       fail(res, error, "Não foi possível salvar o ID Yunite");
     }
+  });
+
+  app.get("/api/tables", requireAuth, (_req, res) => {
+    res.json({ tables: listTables() });
+  });
+
+  app.post("/api/tables", requireAuth, (req, res) => {
+    try {
+      const payload = tablePayload(req.body as Record<string, unknown>);
+      const name = String(payload.name ?? "").trim();
+      if (!name) {
+        res.status(400).json({ error: "Informe o nome da tabela" });
+        return;
+      }
+      const table = createTable({ ...payload, name });
+      res.status(201).json({ table });
+    } catch (error) {
+      fail(res, error, "Não foi possível criar a tabela");
+    }
+  });
+
+  app.get("/api/tables/:id", requireAuth, (req, res) => {
+    const table = getTable(String(req.params.id));
+    if (!table) {
+      res.status(404).json({ error: "Tabela não encontrada" });
+      return;
+    }
+    res.json({ table });
+  });
+
+  app.put("/api/tables/:id", requireAuth, (req, res) => {
+    try {
+      const payload = tablePayload(req.body as Record<string, unknown>);
+      const table = patchTable(String(req.params.id), payload as Partial<PublicTable>);
+      res.json({ table });
+    } catch (error) {
+      fail(res, error, "Não foi possível salvar a tabela");
+    }
+  });
+
+  app.delete("/api/tables/:id", requireAuth, (req, res) => {
+    const table = deleteTable(String(req.params.id));
+    if (!table) {
+      res.status(404).json({ error: "Tabela não encontrada" });
+      return;
+    }
+    res.json({ ok: true });
   });
 
   app.get("/api/yunite/tournaments", requireAuth, async (_req, res) => {

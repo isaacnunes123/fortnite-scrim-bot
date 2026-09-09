@@ -117,6 +117,31 @@ export type Scrim = {
   yuniteTournamentId: string;
 };
 
+export type LeaderboardRow = {
+  id: string;
+  rank: number;
+  players: string[];
+  games: number;
+  eliminations: number;
+  wins: number;
+  score: number;
+};
+
+export type PublicTableKind = "yunite" | "manual";
+
+export type PublicTable = {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
+  mode: ScrimMode;
+  live: boolean;
+  scrimId: string;
+  kind: PublicTableKind;
+  yuniteTournamentId: string;
+  rows: LeaderboardRow[];
+};
+
 export type MapTemplate = {
   id: string;
   name: string;
@@ -173,6 +198,7 @@ type StoreFile = {
   scrimPresets: ScrimPreset[];
   blacklist: BlacklistEntry[];
   logs: ActivityLog[];
+  tables: PublicTable[];
 };
 
 export function dataDir(): string {
@@ -229,6 +255,7 @@ function emptyStore(): StoreFile {
     scrimPresets: [],
     blacklist: [],
     logs: [],
+    tables: [],
   };
 }
 
@@ -449,6 +476,61 @@ function normalizeTemplate(raw: MapTemplate): MapTemplate {
   };
 }
 
+export function parsePlayers(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .flatMap((item) => parsePlayers(item))
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return String(raw ?? "")
+    .split(/[,·|/;\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function asFiniteNumber(raw: unknown, fallback = 0): number {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+export function normalizeLeaderboardRow(
+  raw: Partial<LeaderboardRow> & { team?: string; elims?: number } | null | undefined,
+  index = 0,
+): LeaderboardRow {
+  const rank = Math.max(1, Math.round(asFiniteNumber(raw?.rank, index + 1)));
+  const players = parsePlayers(raw?.players ?? raw?.team);
+  return {
+    id: String(raw?.id ?? randomUUID()),
+    rank,
+    players,
+    games: Math.max(0, Math.round(asFiniteNumber(raw?.games))),
+    eliminations: Math.max(0, Math.round(asFiniteNumber(raw?.eliminations ?? raw?.elims))),
+    wins: Math.max(0, Math.round(asFiniteNumber(raw?.wins))),
+    score: asFiniteNumber(raw?.score),
+  };
+}
+
+export function normalizeTable(raw: Partial<PublicTable> | null | undefined): PublicTable {
+  const kind: PublicTableKind = raw?.kind === "yunite" ? "yunite" : "manual";
+  const rows = Array.isArray(raw?.rows)
+    ? raw.rows.map((row, index) => normalizeLeaderboardRow(row, index))
+    : [];
+  rows.sort((a, b) => a.rank - b.rank || a.players.join("").localeCompare(b.players.join("")));
+  return {
+    id: String(raw?.id ?? randomUUID()),
+    name: String(raw?.name ?? "").trim() || "Tabela",
+    description: String(raw?.description ?? "").trim(),
+    createdAt: String(raw?.createdAt ?? new Date().toISOString()),
+    mode: isScrimMode(String(raw?.mode ?? "")) ? (raw!.mode as ScrimMode) : "trio",
+    live: raw?.live !== false,
+    scrimId: String(raw?.scrimId ?? "").trim(),
+    kind,
+    yuniteTournamentId: String(raw?.yuniteTournamentId ?? "").trim(),
+    rows,
+  };
+}
+
 function normalizeScrimPreset(raw: Partial<ScrimPreset>): ScrimPreset {
   return {
     id: raw.id || randomUUID(),
@@ -539,6 +621,7 @@ function readDisk(): StoreFile {
       scrimPresets: mergeLast([repoScrimPresets, dataScrimPresets, storeScrimPresets]),
       blacklist: parsed.blacklist ?? [],
       logs: parsed.logs ?? [],
+      tables: Array.isArray(parsed.tables) ? parsed.tables.map(normalizeTable) : [],
     };
   } catch {
     const repoTemplates = readJsonFile<MapTemplate[]>(mapPresetsPath(repoPresetsDir()), []).map(
@@ -559,6 +642,9 @@ function readDisk(): StoreFile {
 function getStore(): StoreFile {
   if (!cache) {
     cache = readDisk();
+  }
+  if (!Array.isArray(cache.tables)) {
+    cache.tables = [];
   }
   return cache;
 }
@@ -630,6 +716,7 @@ function storeRecordCount(file: {
   logs?: unknown[];
   templates?: unknown[];
   scrimPresets?: unknown[];
+  tables?: unknown[];
 }): number {
   return (
     (file.scrims?.length ?? 0) +
@@ -637,7 +724,8 @@ function storeRecordCount(file: {
     (file.blacklist?.length ?? 0) +
     (file.logs?.length ?? 0) +
     (file.templates?.length ?? 0) +
-    (file.scrimPresets?.length ?? 0)
+    (file.scrimPresets?.length ?? 0) +
+    (file.tables?.length ?? 0)
   );
 }
 
@@ -1306,6 +1394,107 @@ function pruneExpiredBans(): void {
   }
 }
 
+export function listTables(): PublicTable[] {
+  return getStore()
+    .tables.slice()
+    .map(normalizeTable)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export function getTable(id: string): PublicTable | null {
+  const table = getStore().tables.find((item) => item.id === id);
+  return table ? normalizeTable(table) : null;
+}
+
+export function createTable(input: {
+  name: string;
+  description?: string;
+  mode?: string;
+  live?: boolean;
+  scrimId?: string;
+  kind?: string;
+  yuniteTournamentId?: string;
+  rows?: unknown[];
+}): PublicTable {
+  const name = String(input.name ?? "").trim();
+  if (!name) {
+    throw new Error("Informe o nome da tabela");
+  }
+  const scrimId = String(input.scrimId ?? "").trim();
+  if (scrimId && !getScrim(scrimId)) {
+    throw new Error("Scrim vinculada não encontrada");
+  }
+  const table = normalizeTable({
+    id: randomUUID(),
+    name,
+    description: input.description,
+    createdAt: new Date().toISOString(),
+    mode: isScrimMode(String(input.mode ?? "")) ? (input.mode as ScrimMode) : "trio",
+    live: input.live !== false,
+    scrimId,
+    kind: input.kind === "yunite" ? "yunite" : "manual",
+    yuniteTournamentId: String(input.yuniteTournamentId ?? "").trim(),
+    rows: Array.isArray(input.rows) ? (input.rows as LeaderboardRow[]) : [],
+  });
+  const store = getStore();
+  store.tables.push(table);
+  persist();
+  addLog({
+    scrimId: table.scrimId || null,
+    kind: "table",
+    summary: `Tabela criada: ${table.name}`,
+    detail: table.kind === "manual" ? "Tabela manual" : "Tabela Yunite",
+  });
+  return table;
+}
+
+export function patchTable(id: string, patch: Partial<PublicTable> & { rows?: unknown[] }): PublicTable {
+  const store = getStore();
+  const index = store.tables.findIndex((item) => item.id === id);
+  if (index < 0) {
+    throw new Error("Tabela não encontrada");
+  }
+  const current = normalizeTable(store.tables[index]);
+  const scrimId =
+    patch.scrimId === undefined ? current.scrimId : String(patch.scrimId ?? "").trim();
+  if (scrimId && !getScrim(scrimId)) {
+    throw new Error("Scrim vinculada não encontrada");
+  }
+  const next = normalizeTable({
+    ...current,
+    ...patch,
+    id,
+    scrimId,
+    rows: patch.rows !== undefined ? (patch.rows as LeaderboardRow[]) : current.rows,
+  });
+  store.tables[index] = next;
+  persist();
+  addLog({
+    scrimId: next.scrimId || null,
+    kind: "table",
+    summary: `Tabela atualizada: ${next.name}`,
+    detail: next.kind === "manual" ? `${next.rows.length} linhas` : "Tabela Yunite",
+  });
+  return next;
+}
+
+export function deleteTable(id: string): PublicTable | null {
+  const store = getStore();
+  const table = store.tables.find((item) => item.id === id) ?? null;
+  if (!table) {
+    return null;
+  }
+  store.tables = store.tables.filter((item) => item.id !== id);
+  persist();
+  addLog({
+    scrimId: table.scrimId || null,
+    kind: "table",
+    summary: `Tabela apagada: ${table.name}`,
+    detail: `ID ${id}`,
+  });
+  return normalizeTable(table);
+}
+
 export function deleteScrim(id: string): Scrim | null {
   const store = getStore();
   const scrim = store.scrims.find((item) => item.id === id) ?? null;
@@ -1314,6 +1503,9 @@ export function deleteScrim(id: string): Scrim | null {
   }
   store.scrims = store.scrims.filter((item) => item.id !== id);
   store.invites = store.invites.filter((invite) => invite.scrimId !== id);
+  store.tables = (store.tables ?? []).map((table) =>
+    table.scrimId === id ? { ...table, scrimId: "" } : table,
+  );
   persist();
   addLog({
     scrimId: id,

@@ -15,6 +15,7 @@ import {
   type ScrimSummary,
 } from "./api";
 import { MapBoard } from "./MapBoard";
+import { StaffTables } from "./StaffTables";
 import { TemplatesPage } from "./Templates";
 
 type AuthState = {
@@ -24,7 +25,7 @@ type AuthState = {
   passwordLogin: boolean;
 };
 
-type View = { page: "home" } | { page: "scrim"; id: string } | { page: "presets" };
+type View = { page: "home" } | { page: "scrim"; id: string } | { page: "presets" } | { page: "tables" };
 
 function formatWhen(value: string): string {
   return new Date(value).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
@@ -200,6 +201,9 @@ export function App() {
               <a className="btn" href="/api/auth/discord?next=admin">
                 Entrar com Discord
               </a>
+              <a className="btn secondary" href="/">
+                Página inicial
+              </a>
               <a className="btn secondary" href="/tabelas">
                 Tabelas públicas
               </a>
@@ -218,6 +222,9 @@ export function App() {
               <button className="btn" type="submit" disabled={loading}>
                 {loading ? "Entrando…" : "Entrar"}
               </button>
+              <a className="btn secondary" href="/">
+                Página inicial
+              </a>
               <a className="btn secondary" href="/tabelas">
                 Tabelas públicas
               </a>
@@ -241,9 +248,15 @@ export function App() {
           </span>
         </button>
         <div className="actions">
+          <a className="btn secondary" href="/">
+            Site
+          </a>
           <a className="btn secondary" href="/tabelas">
             Tabelas públicas
           </a>
+          <button className="btn secondary" type="button" onClick={() => setView({ page: "tables" })}>
+            Tabelas
+          </button>
           <button className="btn secondary" type="button" onClick={() => setView({ page: "presets" })}>
             Presets
           </button>
@@ -262,9 +275,12 @@ export function App() {
           scrims={scrims}
           onCreated={refreshSession}
           onOpen={(id) => setView({ page: "scrim", id })}
+          onTables={() => setView({ page: "tables" })}
         />
       ) : view.page === "presets" ? (
         <TemplatesPage onBack={() => setView({ page: "home" })} />
+      ) : view.page === "tables" ? (
+        <StaffTables onBack={() => setView({ page: "home" })} />
       ) : (
         <ScrimPage
           id={view.id}
@@ -283,11 +299,13 @@ function Home({
   scrims,
   onCreated,
   onOpen,
+  onTables,
 }: {
   status: BotStatus | null;
   scrims: ScrimSummary[];
   onCreated: () => Promise<void>;
   onOpen: (id: string) => void;
+  onTables: () => void;
 }) {
   const [name, setName] = useState("");
   const [mode, setMode] = useState("trio");
@@ -673,10 +691,21 @@ function Home({
           <ActivityFeed logs={logs} full={logFull} onToggle={() => setLogFull((value) => !value)} />
         </div>
         <div className="card" style={{ marginTop: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Tabelas públicas</h2>
+          <p className="muted">
+            <strong>Adicionar tabela</strong> cria uma listagem em /tabelas sem precisar de UUID
+            Yunite. Dá para preencher as linhas na mão (<strong>tabela manual</strong>) ou
+            vincular um torneio Yunite. Opcional: ligar uma scrim só pelo mapa de drop.
+          </p>
+          <button className="btn" type="button" onClick={onTables}>
+            Adicionar tabela
+          </button>
+        </div>
+        <div className="card" style={{ marginTop: 16 }}>
           <h2 style={{ marginTop: 0 }}>Listas</h2>
           <p className="muted">
-            Para colar o ID Yunite, abra a scrim nesta lista. O campo fica no topo da página da
-            scrim — não em Tabelas públicas.
+            Para colar o ID Yunite numa scrim já criada, abra-a nesta lista. O campo fica no topo
+            da página da scrim. Tabelas manuais ficam em Adicionar tabela.
           </p>
           {scrims.length === 0 ? (
             <p className="muted">Nenhuma scrim ainda. Crie a primeira ao lado.</p>

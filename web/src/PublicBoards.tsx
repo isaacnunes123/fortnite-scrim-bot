@@ -76,9 +76,9 @@ export function PublicBoards() {
   return (
     <div className="shell boards-shell">
       <header className="topbar">
-        <a className="brand" href="/tabelas" onClick={(event) => {
+        <a className="brand" href="/" onClick={(event) => {
           event.preventDefault();
-          go("/tabelas");
+          window.location.href = "/";
         }}>
           <img src="/brand/logo.png" alt="" className="brand-logo" />
           <span className="brand-copy">
@@ -87,7 +87,7 @@ export function PublicBoards() {
           </span>
         </a>
         <div className="actions">
-          <a className="btn secondary" href="/">
+          <a className="btn secondary" href="/painel">
             Painel staff
           </a>
         </div>
@@ -135,8 +135,8 @@ function BoardList() {
         <p className="boards-kicker">Rankings ao vivo</p>
         <h1>Tabelas</h1>
         <p className="muted">
-          Colocação das scrims (Yunite) e o mapa de drop de cada lobby. Sem login. A staff cola o
-          ID do torneio no painel da scrim, não aqui.
+          Colocação das scrims — Yunite ou tabela manual — e o mapa de drop quando a staff
+          vincula um lobby. Sem login.
         </p>
       </div>
 
@@ -180,7 +180,7 @@ function BoardList() {
       </div>
 
       {visible.length === 0 ? (
-        <p className="muted">Nenhuma scrim pública ainda. Quando a staff abrir um lobby, ela aparece aqui.</p>
+        <p className="muted">Nenhuma tabela pública ainda. Quando a staff publicar, ela aparece aqui.</p>
       ) : (
         <ul className="boards-grid">
           {visible.map((board) => (
@@ -203,11 +203,19 @@ function BoardList() {
                   </span>
                 </h2>
                 <p>
-                  {MODE_LABEL[board.mode]} · {board.teamCount}/{board.maxSlots} times
-                  {board.hasTable ? " · tabela Yunite" : ""}
+                  {MODE_LABEL[board.mode]}
+                  {board.kind === "table"
+                    ? board.source === "manual"
+                      ? ` · ${board.teamCount} linhas`
+                      : " · tabela Yunite"
+                    : ` · ${board.teamCount}/${board.maxSlots} times`}
+                  {board.kind === "table" && board.source === "manual" ? " · tabela manual" : ""}
+                  {board.kind === "scrim" && board.hasTable ? " · tabela Yunite" : ""}
                 </p>
                 <p className="board-card-meta">
-                  Mapa {board.claimedDrops}/{board.dropCount || 0} drops
+                  {board.hasMap
+                    ? `Mapa ${board.claimedDrops}/${board.dropCount || 0} drops`
+                    : "Sem mapa de drop"}
                 </p>
                 <span className="board-card-cta">Ver tabela</span>
               </button>
@@ -265,6 +273,8 @@ function BoardDetail({ id }: { id: string }) {
   const rows = board.yunite.rows ?? [];
   const matches = board.yunite.matches ?? [];
   const yuniteTitle = board.yunite.title?.trim();
+  const isManual = board.source === "manual";
+  const showMap = Boolean(board.hasMap);
 
   return (
     <section className="boards-detail">
@@ -273,40 +283,46 @@ function BoardDetail({ id }: { id: string }) {
           Voltar
         </button>
         <div>
-          <p className="boards-kicker">{yuniteTitle || "Scrim"}</p>
+          <p className="boards-kicker">
+            {isManual ? "Tabela manual" : yuniteTitle || (board.kind === "table" ? "Tabela" : "Scrim")}
+          </p>
           <h1>{board.name}</h1>
           <p className="muted">
-            {MODE_LABEL[board.mode]} · {board.teamCount}/{board.maxSlots} times ·{" "}
+            {MODE_LABEL[board.mode]}
+            {board.kind === "scrim" ? ` · ${board.teamCount}/${board.maxSlots} times · ` : " · "}
             {formatWhen(board.createdAt)}
           </p>
+          {board.description ? <p className="muted">{board.description}</p> : null}
         </div>
         <span className={`pill ${board.live ? "live" : "off"}`}>
           {board.live ? "Ao vivo" : "Encerrada"}
         </span>
       </div>
 
-      <div className="boards-tabs">
-        <button
-          type="button"
-          className={`boards-chip ${tab === "table" ? "on" : ""}`}
-          onClick={() => setTab("table")}
-        >
-          Tabela
-        </button>
-        <button
-          type="button"
-          className={`boards-chip ${tab === "map" ? "on" : ""}`}
-          onClick={() => setTab("map")}
-        >
-          Mapa de drop
-        </button>
-      </div>
+      {showMap ? (
+        <div className="boards-tabs">
+          <button
+            type="button"
+            className={`boards-chip ${tab === "table" ? "on" : ""}`}
+            onClick={() => setTab("table")}
+          >
+            Tabela
+          </button>
+          <button
+            type="button"
+            className={`boards-chip ${tab === "map" ? "on" : ""}`}
+            onClick={() => setTab("map")}
+          >
+            Mapa de drop
+          </button>
+        </div>
+      ) : null}
 
-      <div className={`boards-split ${tab}`}>
+      <div className={`boards-split ${tab} ${showMap ? "" : "no-map"}`}>
         <div className="card boards-table-card">
           <div className="boards-table-head">
             <h2>Colocação</h2>
-            {matches.length > 0 ? (
+            {!isManual && matches.length > 0 ? (
               <select
                 value={sessionId}
                 onChange={(event) => {
@@ -328,7 +344,11 @@ function BoardDetail({ id }: { id: string }) {
           </div>
           {board.yunite.error ? <p className="muted">{board.yunite.error}</p> : null}
           {!board.yunite.error && rows.length === 0 ? (
-            <p className="muted">A tabela ainda não tem linhas. Assim que o Yunite pontuar, aparece aqui.</p>
+            <p className="muted">
+              {isManual
+                ? "A staff ainda não adicionou linhas nesta tabela."
+                : "A tabela ainda não tem linhas. Assim que o Yunite pontuar, aparece aqui."}
+            </p>
           ) : rows.length > 0 ? (
             <div className="boards-table-wrap">
               <table className="boards-table">
@@ -352,6 +372,7 @@ function BoardDetail({ id }: { id: string }) {
           ) : null}
         </div>
 
+        {showMap ? (
         <div className="card boards-map-card">
           <div className="boards-table-head">
             <h2>Mapa de drop</h2>
@@ -376,6 +397,7 @@ function BoardDetail({ id }: { id: string }) {
               ))}
           </ul>
         </div>
+        ) : null}
       </div>
     </section>
   );

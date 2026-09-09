@@ -104,7 +104,7 @@ export async function finishDiscordLogin(req: Request, res: Response): Promise<v
       res.status(403).type("html").send(
         `<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;padding:32px;max-width:560px">
         <p>${escapeHtml(check.reason)}</p>
-        <p><a href="/">Voltar</a></p></body>`,
+        <p><a href="/painel">Voltar ao painel</a></p></body>`,
       );
       return;
     }
@@ -115,7 +115,7 @@ export async function finishDiscordLogin(req: Request, res: Response): Promise<v
       secure: env.cookieSecure,
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-    res.redirect("/");
+    res.redirect("/painel");
     return;
   }
 

@@ -1584,6 +1584,7 @@ code {
   width: 100%;
   text-align: left;
   color: inherit;
+  text-decoration: none;
   background: var(--bg-elevated);
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -1778,4 +1779,73 @@ code {
   .boards-detail-head {
     flex-wrap: wrap;
   }
+
+  .boards-split.no-map .boards-table-card {
+    display: block;
+  }
+}
+
+.home-lead {
+  max-width: 42rem;
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+.home-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.home-stats {
+  margin: 8px 0 36px;
+}
+
+.home-stats .stat span {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.home-boards {
+  margin-top: 8px;
+}
+
+.home-boards .boards-table-head {
+  margin-bottom: 16px;
+}
+
+.kind-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 16px;
+}
+
+.check-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.check-line input {
+  width: auto;
+  margin: 0;
+}
+
+.staff-rows input {
+  margin: 0;
+  padding: 8px 10px;
+  min-width: 0;
+}
+
+.staff-rows td:last-child {
+  white-space: nowrap;
+}
+
+.boards-split.no-map {
+  grid-template-columns: 1fr;
 }

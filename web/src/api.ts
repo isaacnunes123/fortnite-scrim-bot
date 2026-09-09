@@ -203,6 +203,7 @@ export type ScrimDetail = {
 export type PublicBoardSummary = {
   id: string;
   name: string;
+  description?: string;
   mode: "solo" | "duo" | "trio" | "squad";
   createdAt: string;
   teamSize: number;
@@ -213,9 +214,26 @@ export type PublicBoardSummary = {
   dropsOpen: boolean;
   live: boolean;
   hasTable: boolean;
+  hasMap?: boolean;
+  kind?: "scrim" | "table";
+  source?: "yunite" | "manual" | "none";
+};
+
+export type PublicTable = {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
+  mode: "solo" | "duo" | "trio" | "squad";
+  live: boolean;
+  scrimId: string;
+  kind: "yunite" | "manual";
+  yuniteTournamentId: string;
+  rows: PublicLeaderboardRow[];
 };
 
 export type PublicLeaderboardRow = {
+  id?: string;
   rank: number;
   players: string[];
   games: number;
