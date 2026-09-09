@@ -166,12 +166,15 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
       } catch {
         throw new Error("Arquivo JSON inválido");
       }
-      const created = await api<{ template: MapTemplate }>("/api/templates/import", {
-        method: "POST",
-        body: JSON.stringify(parsed),
-      });
+      const created = await api<{ template: MapTemplate; warning?: string | null }>(
+        "/api/templates/import",
+        {
+          method: "POST",
+          body: JSON.stringify(parsed),
+        },
+      );
       await loadList(created.template.id);
-      setSaved("Preset importado.");
+      setSaved(created.warning || "Preset importado. Drops e imagem ok.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível importar o JSON");
     }

@@ -7,7 +7,7 @@ import { getBotStatus, getDiscordClient } from "../bot/client.js";
 import { getGuild, listBotGuilds, notifyInvite, resolveDiscordPlayer, rosterForScrim } from "../bot/guild.js";
 import { subscribe } from "../scrims/live.js";
 import { env } from "../env.js";
-import { DEFAULT_MAP_URL, savePresetMap, saveUploadedMap, uploadDir } from "../scrims/maps.js";
+import { DEFAULT_MAP_URL, resolvePublicMapUrl, savePresetMap, saveUploadedMap, uploadDir } from "../scrims/maps.js";
 import {
   beginDiscordLogin,
   finishDiscordLogin,
@@ -73,6 +73,10 @@ async function requireAuth(req: Request, res: Response, next: NextFunction): Pro
 function fail(res: Response, error: unknown, fallback: string): void {
   const message = error instanceof Error ? error.message : fallback;
   res.status(400).json({ error: message });
+}
+
+function withLiveMap<T extends { mapImageUrl: string }>(item: T): T {
+  return { ...item, mapImageUrl: resolvePublicMapUrl(item.mapImageUrl).url };
 }
 
 function parseWindows(raw: unknown): PriorityWindow[] {
@@ -185,7 +189,7 @@ export async function createWebApp() {
   });
 
   app.get("/api/templates", requireAuth, (_req, res) => {
-    res.json({ templates: listTemplates() });
+    res.json({ templates: listTemplates().map(withLiveMap) });
   });
 
   app.post("/api/templates", requireAuth, (req, res) => {
@@ -199,7 +203,23 @@ export async function createWebApp() {
 
   app.post("/api/templates/import", requireAuth, (req, res) => {
     try {
-      res.status(201).json({ template: importTemplate(req.body) });
+      const originalUrl = String(req.body?.mapImageUrl ?? "").trim();
+      const resolved = resolvePublicMapUrl(originalUrl);
+      const template = importTemplate({ ...req.body, mapImageUrl: resolved.url });
+      addLog({
+        scrimId: null,
+        kind: "preset",
+        summary: `Preset de mapa importado: ${template.name}`,
+        detail: resolved.missing
+          ? `${template.drops.length} drops. A imagem do JSON (${originalUrl || "vazia"}) não está neste servidor. Use Trocar imagem.`
+          : `${template.drops.length} drops. Imagem: ${resolved.url}`,
+      });
+      res.status(201).json({
+        template: withLiveMap(template),
+        warning: resolved.missing
+          ? `Os ${template.drops.length} drops vieram certos. A foto do JSON era um arquivo antigo de upload que não existe mais aqui. Clique em Trocar imagem e manda o PNG/JPG da ilha de novo.`
+          : null,
+      });
     } catch (error) {
       fail(res, error, "Não foi possível importar o preset");
     }
@@ -211,7 +231,7 @@ export async function createWebApp() {
       res.status(404).json({ error: "Preset não encontrado" });
       return;
     }
-    res.json({ template });
+    res.json({ template: withLiveMap(template) });
   });
 
   app.put("/api/templates/:id", requireAuth, (req, res) => {
@@ -239,7 +259,7 @@ export async function createWebApp() {
         patch.maxContestedDrops = clampMaxContestedDrops(req.body.maxContestedDrops);
       }
       const template = patchTemplate(String(req.params.id), patch);
-      res.json({ template });
+      res.json({ template: withLiveMap(template) });
     } catch (error) {
       fail(res, error, "Não foi possível salvar o preset");
     }
@@ -319,7 +339,7 @@ export async function createWebApp() {
       } catch {
         mapImageUrl = uploaded;
       }
-      res.json({ template: patchTemplate(template.id, { mapImageUrl }) });
+      res.json({ template: withLiveMap(patchTemplate(template.id, { mapImageUrl })) });
     },
   );
 
@@ -465,7 +485,11 @@ export async function createWebApp() {
             highestRoleColor: "#6b7280",
           }));
     res.json({
-      scrim: { ...scrim, teamSize: MODE_SIZE[scrim.mode], teamCount: teamCount(scrim.id) },
+      scrim: withLiveMap({
+        ...scrim,
+        teamSize: MODE_SIZE[scrim.mode],
+        teamCount: teamCount(scrim.id),
+      }),
       invites: roster,
     });
   });
@@ -736,7 +760,7 @@ export async function createWebApp() {
     }
     res.json({
       name: live.name,
-      mapImageUrl: live.mapImageUrl || DEFAULT_MAP_URL,
+      mapImageUrl: resolvePublicMapUrl(live.mapImageUrl).url || DEFAULT_MAP_URL,
       drops: live.drops,
       teamName: access.access.teamName,
       dropped: access.access.dropped,

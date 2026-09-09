@@ -80,22 +80,31 @@ export function MapBoard({
     const canvas = canvasRef.current;
     const image = mapImageRef.current;
     const viewport = viewportRef.current;
-    if (!canvas || !image?.naturalWidth || !viewport?.clientWidth) {
+    if (!canvas || !viewport?.clientWidth) {
       return;
-    }
-    if (canvas.width !== image.naturalWidth || canvas.height !== image.naturalHeight) {
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
     }
     const ctx = canvas.getContext("2d");
     if (!ctx) {
       return;
     }
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(image, 0, 0);
-    syncViewLimits();
+    if (image?.naturalWidth) {
+      if (canvas.width !== image.naturalWidth || canvas.height !== image.naturalHeight) {
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+      }
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0);
+      syncViewLimits();
+      return;
+    }
+    const cssW = Math.max(1, viewport.clientWidth);
+    const cssH = Math.max(1, viewport.clientHeight || Math.round(cssW * 0.75));
+    canvas.width = cssW;
+    canvas.height = cssH;
+    ctx.fillStyle = "#071018";
+    ctx.fillRect(0, 0, cssW, cssH);
   }
 
   function syncViewLimits() {

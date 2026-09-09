@@ -33,3 +33,28 @@ export function savePresetMap(id: string, buffer: Buffer, mime: string): string 
   fs.writeFileSync(path.join(dir, file), buffer);
   return `/preset-files/${file}`;
 }
+
+export function resolvePublicMapUrl(url: string | null | undefined): {
+  url: string;
+  missing: boolean;
+} {
+  const raw = (url ?? "").trim();
+  if (!raw || raw === DEFAULT_MAP_URL) {
+    return { url: DEFAULT_MAP_URL, missing: false };
+  }
+  if (raw.startsWith("/uploads/")) {
+    const file = path.join(uploadDir, path.basename(raw));
+    if (fs.existsSync(file)) {
+      return { url: raw, missing: false };
+    }
+    return { url: DEFAULT_MAP_URL, missing: true };
+  }
+  if (raw.startsWith("/preset-files/")) {
+    const file = path.join(process.cwd(), "presets", "maps", path.basename(raw));
+    if (fs.existsSync(file)) {
+      return { url: raw, missing: false };
+    }
+    return { url: DEFAULT_MAP_URL, missing: true };
+  }
+  return { url: raw, missing: false };
+}
