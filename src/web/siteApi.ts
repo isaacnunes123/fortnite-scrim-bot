@@ -35,15 +35,25 @@ import {
   saveScrimPreset,
   teamCount,
   clampMaxContestedDrops,
+  clampTeamsPerDrop,
+  createScrim,
+  isScrimMode,
   type PriorityWindow,
   type PublicTable,
 } from "../scrims/store.js";
+import {
+  DiscordProvisionError,
+  explainDiscordError,
+  fetchDiscordGuildContext,
+  provisionLobbyViaRest,
+} from "../scrims/provisionRest.js";
 import { getPublicBoard, listPublicBoards, saveYuniteTournamentId } from "./publicTables.js";
 import { listYuniteTournaments, yuniteConfigured } from "../yunite/client.js";
 import {
   beginDiscordLogin,
   COOKIE_NAME,
   finishDiscordLogin,
+  isBotInternalRequest,
   isStaffSession,
   requireAuth,
 } from "./staffAuth.js";
@@ -267,7 +277,7 @@ async function resolveBotStatus(local?: BotStatusPayload): Promise<BotStatusPayl
 }
 
 const RAILWAY_DOWN_ERROR =
-  "O processo do bot no Railway não está no ar. Sem ele o Discord não cria a categoria (check-in, mapa, código, chat). Abra Railway → Deploy Logs e confira se /health volta JSON com host=bot. BOT_PROCESS_URL deve ser https://….up.railway.app sem barra no final.";
+  "O processo do bot no Railway não está no ar. Check-in ao vivo e slash commands precisam do gateway. Criar a categoria no Discord usa a API REST na Vercel (DISCORD_TOKEN + Gerenciar Canais/Cargos).";
 
 function isCreateScrimPath(req: Request): boolean {
   const path = String(req.path || req.url || "").split("?")[0] ?? "";
@@ -304,11 +314,91 @@ async function kickLobbyProvision(req: Request, scrimId: string): Promise<void> 
   }).catch(() => undefined);
 }
 
+async function canManageScrims(req: Request): Promise<boolean> {
+  return (await isStaffSession(req)) || isBotInternalRequest(req);
+}
+
+function provisionHttpStatus(error: unknown): number {
+  if (error instanceof DiscordRestError) {
+    return error.status >= 400 && error.status < 600 ? error.status : 502;
+  }
+  if (error instanceof DiscordProvisionError) {
+    return error.status >= 400 && error.status < 600 ? error.status : 400;
+  }
+  return 400;
+}
+
+type ParsedCreateScrim =
+  | {
+      name: string;
+      mode: import("../scrims/store.js").ScrimMode;
+      maxSlots: number;
+      accessRoleIds: string[];
+      staffRoleIds: string[];
+      windows: PriorityWindow[];
+      templateId: string;
+      teamsPerDrop: number;
+      maxContestedDrops: number;
+    }
+  | { error: string };
+
+function parseCreateScrimBody(body: Record<string, unknown> | undefined): ParsedCreateScrim {
+  const name = String(body?.name ?? "").trim();
+  const mode = String(body?.mode ?? "");
+  const maxSlots = Number(body?.maxSlots);
+  const accessRoleIds = Array.isArray(body?.accessRoleIds) ? body.accessRoleIds.map(String) : [];
+  const staffRoleIds = Array.isArray(body?.staffRoleIds) ? body.staffRoleIds.map(String) : [];
+  const windows = parseWindows(body?.windows);
+  const templateId = String(body?.templateId ?? "").trim();
+  if (!name) {
+    return { error: "Informe o nome da scrim" };
+  }
+  if (!isScrimMode(mode)) {
+    return { error: "Modo inválido" };
+  }
+  if (!Number.isInteger(maxSlots) || maxSlots < 1 || maxSlots > 100) {
+    return { error: "Limite de times inválido" };
+  }
+  if (accessRoleIds.length === 0) {
+    return { error: "Escolha os cargos da divisão (quem vê o check-in)" };
+  }
+  if (staffRoleIds.length === 0) {
+    return { error: "Escolha pelo menos um cargo de staff" };
+  }
+  if (
+    windows.length === 0 ||
+    windows.some((window) => !/^\d{2}:\d{2}$/.test(window.time) || !/^\d{4}-\d{2}-\d{2}$/.test(window.date))
+  ) {
+    return { error: "Em cada linha de check-in, escolha a data e o horário (Brasília)." };
+  }
+  if (!getTemplate(templateId)) {
+    return { error: "Escolha um preset de mapa" };
+  }
+  return {
+    name,
+    mode,
+    maxSlots,
+    accessRoleIds,
+    staffRoleIds,
+    windows,
+    templateId,
+    teamsPerDrop: clampTeamsPerDrop(body?.teamsPerDrop),
+    maxContestedDrops: clampMaxContestedDrops(body?.maxContestedDrops),
+  };
+}
+
+function scrimCreatePayload(scrim: import("../scrims/store.js").Scrim) {
+  return withLiveMap({
+    ...scrim,
+    teamSize: MODE_SIZE[scrim.mode],
+    teamCount: teamCount(scrim.id),
+  });
+}
+
 async function proxyToBotProcess(req: Request, res: Response): Promise<boolean> {
-  if (!env.botProcessUrl) {
+  if (!env.botProcessUrl || isCreateScrimPath(req)) {
     return false;
   }
-  const createScrim = isCreateScrimPath(req);
   try {
     const url = new URL(req.originalUrl || req.url, `${env.botProcessUrl}/`);
     const headers = new Headers();
@@ -319,14 +409,11 @@ async function proxyToBotProcess(req: Request, res: Response): Promise<boolean> 
     if (contentType) {
       headers.set("content-type", contentType);
     }
-    if (createScrim) {
-      headers.set("x-bot-internal", env.sessionSecret);
-    }
     const init: RequestInit = {
       method: req.method,
       headers,
       redirect: "manual",
-      signal: AbortSignal.timeout(createScrim ? 8_000 : 12_000),
+      signal: AbortSignal.timeout(12_000),
     };
     if (req.method !== "GET" && req.method !== "HEAD") {
       if (Buffer.isBuffer(req.body)) {
@@ -357,11 +444,7 @@ async function proxyToBotProcess(req: Request, res: Response): Promise<boolean> 
   } catch (error) {
     const name = error instanceof Error ? error.name : "";
     if (name === "TimeoutError" || name === "AbortError") {
-      res.status(503).json({
-        error: createScrim
-          ? "O bot no Railway demorou para aceitar a criação. Se o Discord estiver verde, tente de novo em alguns segundos. Se persistir, veja Deploy Logs e /health."
-          : RAILWAY_DOWN_ERROR,
-      });
+      res.status(503).json({ error: RAILWAY_DOWN_ERROR });
       return true;
     }
     return false;
@@ -715,6 +798,67 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
     });
   });
 
+  app.post("/api/scrims", async (req, res) => {
+    if (!(await canManageScrims(req))) {
+      res.status(401).json({ error: "Não autenticado" });
+      return;
+    }
+    const parsed = parseCreateScrimBody(req.body as Record<string, unknown> | undefined);
+    if ("error" in parsed) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+    try {
+      const guild = await fetchDiscordGuildContext();
+      const created = createScrim({
+        name: parsed.name,
+        mode: parsed.mode,
+        maxSlots: parsed.maxSlots,
+        accessRoleIds: parsed.accessRoleIds,
+        staffRoleIds: parsed.staffRoleIds,
+        windows: parsed.windows,
+        guildId: guild.guildId,
+        guildName: guild.guildName,
+        templateId: parsed.templateId,
+        teamsPerDrop: parsed.teamsPerDrop,
+        maxContestedDrops: parsed.maxContestedDrops,
+      });
+      await flushStore();
+      const ready = await provisionLobbyViaRest(created);
+      void kickLobbyProvision(req, ready.id);
+      await commitJson(res, 201, { scrim: scrimCreatePayload(ready), accepted: true });
+    } catch (error) {
+      res.status(provisionHttpStatus(error)).json({ error: explainDiscordError(error) });
+    }
+  });
+
+  app.post("/api/scrims/:id/provision", async (req, res) => {
+    if (!(await canManageScrims(req))) {
+      res.status(401).json({ error: "Não autenticado" });
+      return;
+    }
+    await pullRemoteStore();
+    const scrim = getScrim(String(req.params.id));
+    if (!scrim) {
+      res.status(404).json({ error: "Scrim não encontrada" });
+      return;
+    }
+    if (scrim.discord && scrim.provisionStatus === "ready") {
+      res.status(200).json({ scrim: scrimCreatePayload(scrim), accepted: true });
+      return;
+    }
+    try {
+      const ready = await provisionLobbyViaRest(scrim);
+      void kickLobbyProvision(req, ready.id);
+      await commitJson(res, 200, { scrim: scrimCreatePayload(ready), accepted: true });
+    } catch (error) {
+      res.status(provisionHttpStatus(error)).json({
+        error: explainDiscordError(error),
+        scrim: getScrim(scrim.id),
+      });
+    }
+  });
+
   app.get("/api/blacklist", requireAuth, (_req, res) => {
     res.json({ blacklist: listBlacklist() });
   });
@@ -867,11 +1011,11 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
 }
 
 export async function botUnavailable(req: Request, res: Response): Promise<void> {
-  if (await proxyToBotProcess(req, res)) {
+  if (isCreateScrimPath(req)) {
+    res.status(404).json({ error: "Rota de criação não encontrada" });
     return;
   }
-  if (isCreateScrimPath(req)) {
-    res.status(503).json({ error: RAILWAY_DOWN_ERROR });
+  if (await proxyToBotProcess(req, res)) {
     return;
   }
   res.status(503).json({ error: "Bot Discord offline" });

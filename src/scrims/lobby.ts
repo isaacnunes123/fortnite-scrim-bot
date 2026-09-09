@@ -2,8 +2,6 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ChannelType,
-  DiscordAPIError,
   EmbedBuilder,
   PermissionFlagsBits,
   type Client,
@@ -12,90 +10,34 @@ import {
   type TextChannel,
 } from "discord.js";
 import { getGuild } from "../bot/guild.js";
-import { dropMapUrl, publicBaseUrl } from "./links.js";
+import { dropMapUrl } from "./links.js";
 import {
   addLog,
-  applyEmbedVars,
   claimDrop,
   flushStore,
   getScrim,
   listInvites,
   markDropped,
-  nextLobbyNumber,
   patchScrim,
-  teamCount,
-  type DiscordLobby,
-  type EmbedCopy,
   type Scrim,
 } from "./store.js";
-import { clockMinutes, formatLeaveUntil, formatWindowWhen, parseBrasiliaDateTime, parseClock } from "./time.js";
+import {
+  dropMapMessagePayload,
+  embedPayload,
+  leaveMessagePayload,
+  registrationMessagePayload,
+  registrationWindowLines,
+  scrimEmbedVars,
+  type DiscordEmbedPayload,
+} from "./lobbyPayloads.js";
+import {
+  DiscordProvisionError,
+  explainDiscordError,
+  provisionLobbyViaRest,
+} from "./provisionRest.js";
+import { clockMinutes, parseBrasiliaDateTime, parseClock } from "./time.js";
 
-export class DiscordProvisionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DiscordProvisionError";
-  }
-}
-
-function discordErrorCode(error: unknown): number | null {
-  const raw =
-    error instanceof DiscordAPIError
-      ? error.code
-      : error && typeof error === "object" && "code" in error
-        ? (error as { code?: unknown }).code
-        : null;
-  const code = Number(raw);
-  return Number.isFinite(code) ? code : null;
-}
-
-export function explainDiscordError(error: unknown): string {
-  if (error instanceof DiscordProvisionError) {
-    return error.message;
-  }
-  const code = discordErrorCode(error);
-  const text = error instanceof Error ? error.message : String(error ?? "");
-  if (code === 50013 || /missing permissions/i.test(text)) {
-    return "O bot não tem permissão para criar canais ou cargos. No servidor: Configurações → Cargos → cargo do bot → marque Gerenciar Canais e Gerenciar Cargos. O cargo do bot precisa ficar acima dos cargos da divisão.";
-  }
-  if (code === 30013) {
-    return "O servidor chegou no limite de canais do Discord. Apague categorias antigas de lobby e tente de novo.";
-  }
-  if (code === 30005) {
-    return "O servidor chegou no limite de cargos do Discord. Apague cargos antigos de lobby (lobby-N-in / lobby-N-ready) e tente de novo.";
-  }
-  if (text) {
-    return text;
-  }
-  return "Não foi possível criar a categoria no Discord";
-}
-
-function isPermanentDiscordError(error: unknown): boolean {
-  const code = discordErrorCode(error);
-  return (
-    error instanceof DiscordProvisionError ||
-    code === 50013 ||
-    code === 30013 ||
-    code === 30005 ||
-    code === 50001 ||
-    code === 50035
-  );
-}
-
-async function withDiscordRetry<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
-  let last: unknown;
-  for (let i = 0; i < attempts; i += 1) {
-    try {
-      return await fn();
-    } catch (error) {
-      last = error;
-      if (isPermanentDiscordError(error) || i === attempts - 1) {
-        throw error;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 400 * (i + 1)));
-    }
-  }
-  throw last;
-}
+export { DiscordProvisionError, explainDiscordError };
 
 export async function assertBotCanProvision(guild: Guild, client: Client): Promise<void> {
   const me = guild.members.me ?? (await guild.members.fetch(client.user!.id));
@@ -188,47 +130,32 @@ function roleView(roleId: string, send: boolean): OverwriteResolvable {
   };
 }
 
-function parseColor(hex: string, fallback: number): number {
-  const value = Number.parseInt(hex.replace("#", ""), 16);
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function scrimVars(scrim: Scrim, extra: Record<string, string> = {}): Record<string, string> {
-  return {
-    name: scrim.name,
-    teams: String(teamCount(scrim.id)),
-    max: String(scrim.maxSlots),
-    windows: extra.windows ?? "",
-    url: dropMapUrl(scrim.id),
-    leaveUntil: formatLeaveUntil(scrim.leaveUntil) || "ainda não definido",
-    punishHours: String(scrim.punishHours),
-    code: scrim.matchCode || "—",
-    ...extra,
-  };
-}
-
-function embedFrom(copy: EmbedCopy, vars: Record<string, string>, fallbackColor: number) {
-  const footer = applyEmbedVars(copy.footer, vars).slice(0, 2048);
+function embedFromPayload(payload: DiscordEmbedPayload) {
   const embed = new EmbedBuilder()
-    .setColor(parseColor(copy.color, fallbackColor))
-    .setTitle(applyEmbedVars(copy.title, vars).slice(0, 256) || "Scrim")
-    .setDescription(applyEmbedVars(copy.description, vars).slice(0, 4096) || "—");
-  if (footer) {
-    embed.setFooter({ text: footer });
+    .setColor(payload.color)
+    .setTitle(payload.title)
+    .setDescription(payload.description);
+  if (payload.footer?.text) {
+    embed.setFooter({ text: payload.footer.text });
+  }
+  if (payload.url) {
+    embed.setURL(payload.url);
   }
   return embed;
 }
 
-export function registrationEmbed(scrim: Scrim, guild: Guild) {
-  const lines = scrim.windows.map((window) => {
-    const when = formatWindowWhen(window);
-    if (!window.roleId) {
-      return `Quem **não** tem cargo de prioridade faz check-in em **${when}**`;
-    }
-    const role = guild.roles.cache.get(window.roleId);
-    return `${role ?? `<@&${window.roleId}>`} faz check-in em **${when}**`;
-  });
-  return embedFrom(scrim.embeds.registration, scrimVars(scrim, { windows: lines.join("\n") }), 0x3ee0a2);
+export function registrationEmbed(scrim: Scrim, _guild?: Guild) {
+  const payload = registrationMessagePayload(scrim).embeds?.[0];
+  if (payload) {
+    return embedFromPayload(payload);
+  }
+  return embedFromPayload(
+    embedPayload(
+      scrim.embeds.registration,
+      scrimEmbedVars(scrim, { windows: registrationWindowLines(scrim) }),
+      0x3ee0a2,
+    ),
+  );
 }
 
 export function registrationRow(scrimId: string) {
@@ -241,7 +168,10 @@ export function registrationRow(scrimId: string) {
 }
 
 export function leaveEmbed(scrim: Scrim) {
-  return embedFrom(scrim.embeds.leave, scrimVars(scrim), 0xff5c5c);
+  const payload = leaveMessagePayload(scrim).embeds?.[0];
+  return payload
+    ? embedFromPayload(payload)
+    : embedFromPayload(embedPayload(scrim.embeds.leave, scrimEmbedVars(scrim), 0xff5c5c));
 }
 
 export function leaveRow(scrimId: string) {
@@ -308,162 +238,23 @@ export async function refreshRegistrationMessage(client: Client, scrimId: string
 }
 
 export async function provisionLobby(client: Client, scrim: Scrim): Promise<Scrim> {
-  const guild = getGuild(client, scrim.guildId);
-  if (!guild) {
-    throw new Error("Servidor não encontrado. Escolha o servidor no painel.");
-  }
-  await assertBotCanProvision(guild, client);
-
-  const lobbyNumber = nextLobbyNumber(scrim.guildId);
-  const prefix = `lobby-${lobbyNumber}`;
-
-  const registered = await withDiscordRetry(() =>
-    guild.roles.create({
-      name: `${prefix}-in`,
-      mentionable: false,
-      reason: `Registro ${scrim.name}`,
-    }),
-  );
-  const confirmed = await withDiscordRetry(() =>
-    guild.roles.create({
-      name: `${prefix}-ready`,
-      mentionable: false,
-      reason: `Drop confirmado ${scrim.name}`,
-    }),
-  );
-
-  const staffOverwrites = scrim.staffRoleIds.map((roleId) => roleView(roleId, true));
-  const accessView = scrim.accessRoleIds.map((roleId) => roleView(roleId, false));
-
-  const category = await withDiscordRetry(() =>
-    guild.channels.create({
-      name: `${prefix} ${scrim.name}`.slice(0, 100),
-      type: ChannelType.GuildCategory,
-      permissionOverwrites: [
-        everyoneDeny(guild),
-        botAllow(guild, client),
-        ...accessView,
-        ...staffOverwrites,
-      ],
-    }),
-  );
-
-  const makeText = async (
-    name: string,
-    overwrites: OverwriteResolvable[],
-  ): Promise<TextChannel> => {
-    return withDiscordRetry(() =>
-      guild.channels.create({
-        name,
-        type: ChannelType.GuildText,
-        parent: category.id,
-        permissionOverwrites: [everyoneDeny(guild), botAllow(guild, client), ...overwrites],
-      }),
-    );
-  };
-
-  const registration = await makeText(`${prefix}-registration`, [
-    ...accessView,
-    ...staffOverwrites,
-  ]);
-  const dropmap = await makeText(`${prefix}-dropmap`, [
-    roleView(registered.id, false),
-    ...staffOverwrites,
-  ]);
-  const code = await makeText(`${prefix}-code`, [
-    roleView(confirmed.id, false),
-    ...staffOverwrites,
-  ]);
-  const chat = await makeText(`${prefix}-chat`, [
-    roleView(registered.id, true),
-    ...staffOverwrites,
-  ]);
-  const leave = await makeText(`${prefix}-getting-off`, [
-    roleView(confirmed.id, false),
-    ...staffOverwrites,
-  ]);
-  const fill = await makeText(`${prefix}-fill-requests`, [...staffOverwrites]);
-  const admin = await makeText(`${prefix}-admin`, [...staffOverwrites]);
-
-  const discord: DiscordLobby = {
-    lobbyNumber,
-    categoryId: category.id,
-    registrationId: registration.id,
-    dropmapId: dropmap.id,
-    codeId: code.id,
-    chatId: chat.id,
-    leaveId: leave.id,
-    fillId: fill.id,
-    adminId: admin.id,
-    registeredRoleId: registered.id,
-    confirmedRoleId: confirmed.id,
-    registrationMessageId: null,
-    leaveMessageId: null,
-    dropMapMessageId: null,
-    fillVisible: false,
-    fillChatOpen: false,
-  };
-
-  const saved = patchScrim(scrim.id, { discord, provisionStatus: "pending", provisionError: null });
-
-  const registerMsg = await withDiscordRetry(() =>
-    registration.send({
-      embeds: [registrationEmbed(saved, guild)],
-      components: [registrationRow(saved.id)],
-    }),
-  );
-  const leaveMsg = await withDiscordRetry(() =>
-    leave.send({
-      embeds: [leaveEmbed(saved)],
-      components: [leaveRow(saved.id)],
-    }),
-  );
-  const withIds = patchScrim(scrim.id, {
-    discord: {
-      ...discord,
-      registrationMessageId: registerMsg.id,
-      leaveMessageId: leaveMsg.id,
-    },
-  });
-  const withDrop = await ensureDropMapEmbed(client, withIds);
-  await syncLobbyAccess(client, withDrop).catch(() => undefined);
-  await fill.send({
-    embeds: [
-      new EmbedBuilder()
-        .setColor(0xf5c542)
-        .setTitle("Segunda chance")
-        .setDescription(
-          "Este canal aparece quando a lista fecha. Fica bloqueado até um staff liberar os pedidos.",
-        ),
-    ],
-    components: [
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`fill:${scrim.id}`)
-          .setLabel("Pedir vaga")
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(true),
-      ),
-    ],
-  });
-  await admin.send(
-    `Staff: painel em ${publicBaseUrl()}`,
-  );
-
-  schedulePriorityPings(client, withDrop);
-  return withDrop;
+  const ready = await provisionLobbyViaRest(scrim);
+  schedulePriorityPings(client, ready);
+  return ready;
 }
 
 function dropMapPayload(scrim: Scrim) {
-  const url = dropMapUrl(scrim.id);
-  const open = scrim.dropsOpen !== false;
-  const copy = open ? scrim.embeds.dropmapOpen : scrim.embeds.dropmapClosed;
+  const payload = dropMapMessagePayload(scrim);
+  const url = payload.embeds?.[0]?.url || dropMapUrl(scrim.id);
+  const embed = payload.embeds?.[0]
+    ? embedFromPayload(payload.embeds[0])
+    : new EmbedBuilder().setColor(0x3b82f6).setTitle("Mapa");
   return {
-    embeds: [embedFrom(copy, scrimVars(scrim), open ? 0x3b82f6 : 0x111111).setURL(url)],
+    embeds: [embed],
     components: [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
-          .setLabel(open ? "Abrir mapa e marcar drop" : "Ver mapa ao vivo")
+          .setLabel(scrim.dropsOpen !== false ? "Abrir mapa e marcar drop" : "Ver mapa ao vivo")
           .setStyle(ButtonStyle.Link)
           .setURL(url),
       ),
@@ -606,7 +397,7 @@ export async function postMatchCode(client: Client, scrim: Scrim): Promise<void>
     return;
   }
   await (channel as TextChannel).send({
-    embeds: [embedFrom(scrim.embeds.code, scrimVars(scrim), 0xc8f542)],
+    embeds: [embedFromPayload(embedPayload(scrim.embeds.code, scrimEmbedVars(scrim), 0xc8f542))],
   });
 }
 

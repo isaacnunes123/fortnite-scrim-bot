@@ -6,7 +6,8 @@
   "installCommand": "npm install --include=dev",
   "functions": {
     "api/index.ts": {
-      "includeFiles": "presets/**"
+      "includeFiles": "presets/**",
+      "maxDuration": 60
     }
   },
   "rewrites": [

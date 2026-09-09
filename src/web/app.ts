@@ -3,9 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getBotStatus, getDiscordClient } from "../bot/client.js";
-import { getGuild, listBotGuilds, notifyInvite, resolveDiscordPlayer, rosterForScrim } from "../bot/guild.js";
+import { listBotGuilds, notifyInvite, resolveDiscordPlayer, rosterForScrim } from "../bot/guild.js";
 import { subscribe } from "../scrims/live.js";
-import { env } from "../env.js";
 import {
   DEFAULT_MAP_URL,
   persistMapImage,
@@ -14,10 +13,9 @@ import {
 } from "../scrims/maps.js";
 import { saveYuniteTournamentId } from "./publicTables.js";
 import { resolveMapAccess } from "./dropAuth.js";
-import { isBotInternalRequest, isStaffSession } from "./staffAuth.js";
+import { isStaffSession } from "./staffAuth.js";
 import {
   fail,
-  parseWindows,
   registerSiteRoutes,
   setupExpress,
   withLiveMap,
@@ -25,31 +23,22 @@ import {
 import {
   addInvite,
   addLog,
-  createScrim,
-  clampTeamsPerDrop,
-  clampMaxContestedDrops,
   deleteScrim,
   ensureScrimHasDrops,
   findDropAt,
   flushStore,
   getActiveBan,
   getScrim,
-  getTemplate,
-  isScrimMode,
   listInvites,
   MODE_SIZE,
   normalizeDrop,
   patchScrim,
-  pullRemoteStore,
   removeInvite,
   teamCount,
 } from "../scrims/store.js";
 import {
   applyPlayerDrop,
-  assertBotCanProvision,
-  beginLobbyProvision,
   ensureDropMapEmbed,
-  explainDiscordError,
   postMatchCode,
   refreshLeaveMessage,
   refreshRegistrationMessage,
@@ -164,139 +153,6 @@ export async function createWebApp(options: { serveUi?: boolean; app?: express.E
   });
 
   registerSiteRoutes(app, { botStatus: getBotStatus });
-
-  async function canManageScrims(req: express.Request): Promise<boolean> {
-    return (await isStaffSession(req)) || isBotInternalRequest(req);
-  }
-
-  app.post("/api/scrims/:id/provision", async (req, res) => {
-    if (!(await canManageScrims(req))) {
-      res.status(401).json({ error: "Não autenticado" });
-      return;
-    }
-    const client = getDiscordClient();
-    if (!client?.isReady()) {
-      res.status(503).json({ error: "Bot Discord offline" });
-      return;
-    }
-    await pullRemoteStore();
-    const scrim = getScrim(String(req.params.id));
-    if (!scrim) {
-      res.status(404).json({ error: "Scrim não encontrada" });
-      return;
-    }
-    if (scrim.discord && scrim.provisionStatus === "ready") {
-      res.status(200).json({ scrim, accepted: true });
-      return;
-    }
-    const guild = getGuild(client, scrim.guildId);
-    if (!guild) {
-      res.status(400).json({ error: `O bot precisa estar no servidor ${env.discordGuildId}.` });
-      return;
-    }
-    try {
-      await assertBotCanProvision(guild, client);
-    } catch (error) {
-      const message = explainDiscordError(error);
-      patchScrim(scrim.id, { provisionStatus: "failed", provisionError: message });
-      await flushStore().catch(() => undefined);
-      res.status(400).json({ error: message, scrim: getScrim(scrim.id) });
-      return;
-    }
-    patchScrim(scrim.id, { provisionStatus: "pending", provisionError: null });
-    await flushStore().catch(() => undefined);
-    beginLobbyProvision(client, scrim);
-    res.status(202).json({ scrim: getScrim(scrim.id), accepted: true });
-  });
-
-  app.post("/api/scrims", async (req, res) => {
-    if (!(await canManageScrims(req))) {
-      res.status(401).json({ error: "Não autenticado" });
-      return;
-    }
-    const client = getDiscordClient();
-    if (!client?.isReady()) {
-      res.status(503).json({ error: "Bot Discord offline" });
-      return;
-    }
-    const name = String(req.body?.name ?? "").trim();
-    const mode = String(req.body?.mode ?? "");
-    const maxSlots = Number(req.body?.maxSlots);
-    const accessRoleIds = Array.isArray(req.body?.accessRoleIds)
-      ? req.body.accessRoleIds.map(String)
-      : [];
-    const staffRoleIds = Array.isArray(req.body?.staffRoleIds)
-      ? req.body.staffRoleIds.map(String)
-      : [];
-    const windows = parseWindows(req.body?.windows);
-    const templateId = String(req.body?.templateId ?? "").trim();
-    const teamsPerDrop = clampTeamsPerDrop(req.body?.teamsPerDrop);
-    const maxContestedDrops = clampMaxContestedDrops(req.body?.maxContestedDrops);
-    const clientGuild = getGuild(client);
-    if (!clientGuild) {
-      res.status(400).json({
-        error: `O bot precisa estar no servidor ${env.discordGuildId}.`,
-      });
-      return;
-    }
-    try {
-      await assertBotCanProvision(clientGuild, client);
-    } catch (error) {
-      fail(res, error, explainDiscordError(error));
-      return;
-    }
-    if (!name) {
-      res.status(400).json({ error: "Informe o nome da scrim" });
-      return;
-    }
-    if (!isScrimMode(mode)) {
-      res.status(400).json({ error: "Modo inválido" });
-      return;
-    }
-    if (!Number.isInteger(maxSlots) || maxSlots < 1 || maxSlots > 100) {
-      res.status(400).json({ error: "Limite de times inválido" });
-      return;
-    }
-    if (accessRoleIds.length === 0) {
-      res.status(400).json({ error: "Escolha os cargos da divisão (quem vê o check-in)" });
-      return;
-    }
-    if (staffRoleIds.length === 0) {
-      res.status(400).json({ error: "Escolha pelo menos um cargo de staff" });
-      return;
-    }
-    if (
-      windows.length === 0 ||
-      windows.some((window) => !/^\d{2}:\d{2}$/.test(window.time) || !/^\d{4}-\d{2}-\d{2}$/.test(window.date))
-    ) {
-      res.status(400).json({ error: "Em cada linha de check-in, escolha a data e o horário (Brasília)." });
-      return;
-    }
-    if (!getTemplate(templateId)) {
-      res.status(400).json({ error: "Escolha um preset de mapa" });
-      return;
-    }
-    try {
-      const created = createScrim({
-        name,
-        mode,
-        maxSlots,
-        accessRoleIds,
-        staffRoleIds,
-        windows,
-        guildId: clientGuild.id,
-        guildName: clientGuild.name,
-        templateId,
-        teamsPerDrop,
-        maxContestedDrops,
-      });
-      await flushStore();
-      beginLobbyProvision(client, created);
-      res.status(202).json({ scrim: created, accepted: true });
-    } catch (error) {
-      fail(res, error, explainDiscordError(error));
-    }
-  });
 
   app.post("/api/scrims/:id/code", async (req, res) => {
     if (!(await isStaffSession(req))) {

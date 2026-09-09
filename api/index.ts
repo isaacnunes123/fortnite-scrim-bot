@@ -3,7 +3,7 @@ import { createSiteApp, flushStore } from "../src/web/siteApi.js";
 import { ensureStore } from "../src/scrims/store.js";
 
 export const config = {
-  maxDuration: 30,
+  maxDuration: 60,
 };
 
 const app = createSiteApp();

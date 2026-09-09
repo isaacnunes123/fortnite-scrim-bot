@@ -31,19 +31,50 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-async function discordGet(path: string): Promise<{ ok: boolean; status: number; body: unknown }> {
+export type DiscordApiResult = { ok: boolean; status: number; body: unknown };
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function discordRequest(
+  method: string,
+  path: string,
+  body?: unknown,
+  attempts = 5,
+): Promise<DiscordApiResult> {
   if (!env.discordToken) {
     return { ok: false, status: 0, body: null };
   }
-  const response = await fetch(`${API}${path}`, {
-    headers: {
-      Authorization: `Bot ${env.discordToken}`,
-      "Content-Type": "application/json",
-    },
-    signal: AbortSignal.timeout(10_000),
-  });
-  const body = await response.json().catch(() => null);
-  return { ok: response.ok, status: response.status, body };
+  let last: DiscordApiResult = { ok: false, status: 0, body: null };
+  for (let i = 0; i < attempts; i += 1) {
+    const response = await fetch(`${API}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bot ${env.discordToken}`,
+        "Content-Type": "application/json",
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (response.status === 429) {
+      const retryBody = await response.json().catch(() => null);
+      const retryAfter = Number(asRecord(retryBody)?.retry_after ?? 1);
+      await sleep(Math.min(Math.max(retryAfter * 1000, 250) + 50, 8_000));
+      last = { ok: false, status: 429, body: retryBody };
+      continue;
+    }
+    if (response.status === 204) {
+      return { ok: true, status: 204, body: null };
+    }
+    const json = await response.json().catch(() => null);
+    return { ok: response.ok, status: response.status, body: json };
+  }
+  return last;
+}
+
+async function discordGet(path: string): Promise<DiscordApiResult> {
+  return discordRequest("GET", path);
 }
 
 export async function fetchGuildName(): Promise<string> {
@@ -88,10 +119,29 @@ function roleHexColor(color: unknown): string {
   return `#${Math.trunc(n).toString(16).padStart(6, "0")}`;
 }
 
-function discordErrorMessage(body: unknown, fallback: string): string {
+export function discordErrorMessage(body: unknown, fallback: string): string {
   const record = asRecord(body);
   const message = typeof record?.message === "string" ? record.message.trim() : "";
   return message || fallback;
+}
+
+export function discordErrorCode(body: unknown): number | null {
+  const record = asRecord(body);
+  const code = Number(record?.code);
+  return Number.isFinite(code) ? code : null;
+}
+
+export async function fetchBotUserId(): Promise<string> {
+  const result = await discordGet("/users/@me");
+  const record = asRecord(result.body);
+  const id = typeof record?.id === "string" ? record.id.trim() : "";
+  if (!result.ok || !/^\d{17,20}$/.test(id)) {
+    throw new DiscordRestError(
+      "DISCORD_TOKEN rejeitado pelo Discord. Confira o token do bot na Vercel.",
+      result.status === 401 ? 401 : 502,
+    );
+  }
+  return id;
 }
 
 /** GET /guilds/{id}/roles — bot token only. Does not need Server Members Intent. */

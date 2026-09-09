@@ -451,11 +451,11 @@ function Home({
             Isso cria a categoria no Discord (check-in, mapa, código, chat, saída, fill e admin).
             Depois, no painel da scrim, você define até quando a saída é livre.
           </p>
-          {botPresence(status) === "offline" ? <p className="error">Bot Discord offline</p> : null}
-          {botPresence(status) === "unknown" ? (
+          {botPresence(status) === "offline" || botPresence(status) === "unknown" ? (
             <p className="muted">
-              {status?.note ??
-                "A Vercel não confirma o gateway. Se o Discord estiver verde, o bot está no ar. Defina BOT_PROCESS_URL na Vercel."}
+              Criar a categoria no Discord não precisa do Railway. Confira DISCORD_TOKEN na Vercel e
+              as permissões Gerenciar Canais e Gerenciar Cargos no cargo do bot. Check-in ao vivo
+              e slash commands só funcionam quando o gateway estiver no ar.
             </p>
           ) : null}
           {botPresence(status) === "online" && status?.note ? <p className="muted">{status.note}</p> : null}
@@ -707,13 +707,12 @@ function Home({
           >
             Salvar preset de scrim
           </button>
-          <button className="btn" type="submit" disabled={saving || !status?.ready}>
+          <button className="btn" type="submit" disabled={saving}>
             {saving ? "Criando no Discord…" : "Criar scrim no Discord"}
           </button>
           {saving ? (
             <p className="muted">
-              Criando a categoria e os canais no Discord. Isso pode levar até um minuto — o painel
-              não espera o Railway terminar.
+              Criando a categoria e os canais no Discord pela API REST. Isso pode levar até um minuto.
             </p>
           ) : null}
         </form>

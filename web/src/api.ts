@@ -3,9 +3,6 @@ function requestErrorMessage(
   status: number,
 ): string {
   const raw = data.error || data.message || "";
-  if (status === 502 || status === 504 || /Application failed to respond/i.test(raw)) {
-    return "O bot no Railway não está no ar. Sem ele o Discord não cria a categoria. Abra Railway → Deploy Logs e confira se /health volta JSON.";
-  }
   return raw || "Falha na requisição";
 }
 
