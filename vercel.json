@@ -4,31 +4,12 @@
   "buildCommand": "npx vite build",
   "outputDirectory": "dist/public",
   "installCommand": "npm install --include=dev",
+  "functions": {
+    "api/[[...path]].ts": {
+      "includeFiles": "presets/**"
+    }
+  },
   "rewrites": [
-    {
-      "source": "/api",
-      "destination": "https://handsome-curiosity-production-48d3.up.railway.app/api"
-    },
-    {
-      "source": "/api/:path*",
-      "destination": "https://handsome-curiosity-production-48d3.up.railway.app/api/:path*"
-    },
-    {
-      "source": "/uploads/:path*",
-      "destination": "https://handsome-curiosity-production-48d3.up.railway.app/uploads/:path*"
-    },
-    {
-      "source": "/maps/:path*",
-      "destination": "https://handsome-curiosity-production-48d3.up.railway.app/maps/:path*"
-    },
-    {
-      "source": "/preset-files/:path*",
-      "destination": "https://handsome-curiosity-production-48d3.up.railway.app/preset-files/:path*"
-    },
-    {
-      "source": "/brand/:path*",
-      "destination": "https://handsome-curiosity-production-48d3.up.railway.app/brand/:path*"
-    },
     {
       "source": "/((?!api(?:/|$)|assets/|banners/|uploads/|maps/|preset-files/|brand/).*)",
       "destination": "/index.html"

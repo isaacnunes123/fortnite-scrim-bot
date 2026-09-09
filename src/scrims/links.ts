@@ -44,6 +44,9 @@ export function publicBaseUrl(): string {
   if (fromEnv) {
     return fromEnv;
   }
+  if (process.env.VERCEL) {
+    return "https://buildscrims.online";
+  }
   const railway = stripSlash(process.env.RAILWAY_PUBLIC_DOMAIN || process.env.RAILWAY_STATIC_URL || "");
   if (railway) {
     return railway.includes("://") ? railway : `https://${railway}`;

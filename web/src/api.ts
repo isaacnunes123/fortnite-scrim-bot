@@ -14,13 +14,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     code?: number;
   };
   if (!response.ok) {
-    const railwayGone =
-      data.message === "Application not found" ||
-      (response.status === 404 && data.code === 404 && !data.error);
     throw new Error(
-      railwayGone
-        ? "API offline. Gere o domínio público no Railway e aponte a Vercel para ele."
-        : data.error || data.message || "Falha na requisição",
+      data.error || data.message || "Falha na requisição",
     );
   }
   return data;

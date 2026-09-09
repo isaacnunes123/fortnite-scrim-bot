@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { loadRemoteStore, saveRemoteStore, usesEphemeralFs, usesRemoteStore } from "./durable.js";
 import { centroidOf, pointInPolygon, type Vertex } from "./geometry.js";
 import { publish } from "./live.js";
 import { readJsonFile, repoPresetsDir, tryWriteJsonFile } from "./preset-files.js";
@@ -224,10 +225,25 @@ type StoreFile = {
   tables: PublicTable[];
 };
 
+export type PersistenceMode = "postgres" | "filesystem" | "memory";
+
+export function persistenceMode(): PersistenceMode {
+  if (usesRemoteStore()) {
+    return "postgres";
+  }
+  if (usesEphemeralFs()) {
+    return "memory";
+  }
+  return "filesystem";
+}
+
 export function dataDir(): string {
   const fromEnv = process.env.DATA_DIR?.trim();
   if (fromEnv) {
     return fromEnv;
+  }
+  if (usesEphemeralFs()) {
+    return path.join("/tmp", "scrim-data");
   }
   if (process.env.NODE_ENV === "production" && fs.existsSync("/data")) {
     return "/data";
@@ -240,8 +256,16 @@ function storeFilePath(): string {
 }
 
 let cache: StoreFile | null = null;
+let storeReady = false;
+let storeLoading: Promise<void> | null = null;
+let dirty = false;
+let remoteError: string | null = null;
 const CHECKIN_COOLDOWN_MS = 90_000;
 const reentryUntil = new Map<string, number>();
+
+export function storeRemoteError(): string | null {
+  return remoteError;
+}
 
 export function setCheckinCooldown(discordUserId: string, ms = CHECKIN_COOLDOWN_MS): void {
   reentryUntil.set(discordUserId, Date.now() + ms);
@@ -605,61 +629,131 @@ function scrimPresetsPath(base: string): string {
   return path.join(base, "scrim-presets.json");
 }
 
+function isStoreFile(value: unknown): value is Partial<StoreFile> {
+  return Boolean(value) && typeof value === "object";
+}
+
+function hydrateStore(parsed: Partial<StoreFile>): StoreFile {
+  const storeTemplates = Array.isArray(parsed.templates)
+    ? parsed.templates.map(normalizeTemplate)
+    : [];
+  const repoTemplates = readJsonFile<MapTemplate[]>(
+    mapPresetsPath(repoPresetsDir()),
+    [],
+  ).map(normalizeTemplate);
+  const dataTemplates = readJsonFile<MapTemplate[]>(
+    mapPresetsPath(dataDir()),
+    [],
+  ).map(normalizeTemplate);
+  const templates = mergeTemplates([repoTemplates, dataTemplates, storeTemplates]);
+  const storeScrimPresets = Array.isArray(parsed.scrimPresets)
+    ? parsed.scrimPresets.map(normalizeScrimPreset)
+    : [];
+  const repoScrimPresets = readJsonFile<ScrimPreset[]>(
+    scrimPresetsPath(repoPresetsDir()),
+    [],
+  ).map(normalizeScrimPreset);
+  const dataScrimPresets = readJsonFile<ScrimPreset[]>(
+    scrimPresetsPath(dataDir()),
+    [],
+  ).map(normalizeScrimPreset);
+  return {
+    scrims: (parsed.scrims ?? []).map(normalizeScrim),
+    invites: (parsed.invites ?? []).map((invite) => ({
+      ...invite,
+      dropped: Boolean(invite.dropped),
+      fortniteNick: invite.fortniteNick ?? "",
+      droppedAt: invite.droppedAt ?? null,
+      dropName: invite.dropName ?? null,
+    })),
+    templates: templates.length > 0 ? templates : defaultTemplates(),
+    scrimPresets: mergeLast([repoScrimPresets, dataScrimPresets, storeScrimPresets]),
+    blacklist: parsed.blacklist ?? [],
+    logs: parsed.logs ?? [],
+    tables: Array.isArray(parsed.tables) ? parsed.tables.map(normalizeTable) : [],
+  };
+}
+
+function emptyHydratedStore(): StoreFile {
+  const repoTemplates = readJsonFile<MapTemplate[]>(mapPresetsPath(repoPresetsDir()), []).map(
+    normalizeTemplate,
+  );
+  const repoScrimPresets = readJsonFile<ScrimPreset[]>(
+    scrimPresetsPath(repoPresetsDir()),
+    [],
+  ).map(normalizeScrimPreset);
+  return {
+    ...emptyStore(),
+    templates: repoTemplates.length > 0 ? repoTemplates : defaultTemplates(),
+    scrimPresets: repoScrimPresets,
+  };
+}
+
 function readDisk(): StoreFile {
   try {
     const raw = fs.readFileSync(storeFilePath(), "utf-8");
-    const parsed = JSON.parse(raw) as StoreFile;
-    const storeTemplates = Array.isArray(parsed.templates)
-      ? parsed.templates.map(normalizeTemplate)
-      : [];
-    const repoTemplates = readJsonFile<MapTemplate[]>(
-      mapPresetsPath(repoPresetsDir()),
-      [],
-    ).map(normalizeTemplate);
-    const dataTemplates = readJsonFile<MapTemplate[]>(
-      mapPresetsPath(dataDir()),
-      [],
-    ).map(normalizeTemplate);
-    const templates = mergeTemplates([repoTemplates, dataTemplates, storeTemplates]);
-    const storeScrimPresets = Array.isArray(parsed.scrimPresets)
-      ? parsed.scrimPresets.map(normalizeScrimPreset)
-      : [];
-    const repoScrimPresets = readJsonFile<ScrimPreset[]>(
-      scrimPresetsPath(repoPresetsDir()),
-      [],
-    ).map(normalizeScrimPreset);
-    const dataScrimPresets = readJsonFile<ScrimPreset[]>(
-      scrimPresetsPath(dataDir()),
-      [],
-    ).map(normalizeScrimPreset);
-    return {
-      scrims: (parsed.scrims ?? []).map(normalizeScrim),
-      invites: (parsed.invites ?? []).map((invite) => ({
-        ...invite,
-        dropped: Boolean(invite.dropped),
-        fortniteNick: invite.fortniteNick ?? "",
-        droppedAt: invite.droppedAt ?? null,
-        dropName: invite.dropName ?? null,
-      })),
-      templates: templates.length > 0 ? templates : defaultTemplates(),
-      scrimPresets: mergeLast([repoScrimPresets, dataScrimPresets, storeScrimPresets]),
-      blacklist: parsed.blacklist ?? [],
-      logs: parsed.logs ?? [],
-      tables: Array.isArray(parsed.tables) ? parsed.tables.map(normalizeTable) : [],
-    };
+    return hydrateStore(JSON.parse(raw) as StoreFile);
   } catch {
-    const repoTemplates = readJsonFile<MapTemplate[]>(mapPresetsPath(repoPresetsDir()), []).map(
-      normalizeTemplate,
-    );
-    const repoScrimPresets = readJsonFile<ScrimPreset[]>(
-      scrimPresetsPath(repoPresetsDir()),
-      [],
-    ).map(normalizeScrimPreset);
-    return {
-      ...emptyStore(),
-      templates: repoTemplates.length > 0 ? repoTemplates : defaultTemplates(),
-      scrimPresets: repoScrimPresets,
-    };
+    return emptyHydratedStore();
+  }
+}
+
+export async function ensureStore(): Promise<void> {
+  if (storeReady && cache) {
+    return;
+  }
+  if (storeLoading) {
+    await storeLoading;
+    return;
+  }
+  storeLoading = (async () => {
+    if (usesRemoteStore()) {
+      try {
+        const remote = await loadRemoteStore();
+        const parsed =
+          typeof remote === "string"
+            ? (JSON.parse(remote) as unknown)
+            : remote;
+        if (isStoreFile(parsed) && storeRecordCount(parsed) > 0) {
+          cache = hydrateStore(parsed);
+        } else {
+          cache = readDisk();
+          dirty = true;
+        }
+        remoteError = null;
+      } catch (error) {
+        remoteError = error instanceof Error ? error.message : "Falha ao ler o Postgres";
+        console.error("[store] DATABASE_URL falhou:", error);
+        cache = readDisk();
+      }
+    } else {
+      cache = readDisk();
+    }
+    storeReady = true;
+  })();
+  try {
+    await storeLoading;
+  } finally {
+    storeLoading = null;
+  }
+}
+
+export async function flushStore(): Promise<void> {
+  if (!dirty || !cache) {
+    return;
+  }
+  if (usesRemoteStore()) {
+    try {
+      await saveRemoteStore(cache);
+      remoteError = null;
+      dirty = false;
+    } catch (error) {
+      remoteError = error instanceof Error ? error.message : "Falha ao gravar no Postgres";
+      console.error("[store] Falha ao gravar no Postgres:", error);
+      throw error;
+    }
+  } else {
+    dirty = false;
   }
 }
 
@@ -673,8 +767,7 @@ function getStore(): StoreFile {
   return cache;
 }
 
-function persist(): void {
-  const store = getStore();
+function persistToFilesystem(store: StoreFile): void {
   const diskMaps = readJsonFile<MapTemplate[]>(mapPresetsPath(dataDir()), []);
   const repoMaps = readJsonFile<MapTemplate[]>(mapPresetsPath(repoPresetsDir()), []);
   store.templates = preserveTemplateDrops(store.templates, diskMaps, repoMaps);
@@ -684,11 +777,17 @@ function persist(): void {
     store.scrimPresets = mergeLast([diskScrims, repoScrims]);
   }
   const filePath = storeFilePath();
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  if (canReplaceStoreFile(filePath, store)) {
-    const tmp = `${filePath}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(store, null, 2));
-    fs.renameSync(tmp, filePath);
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    if (canReplaceStoreFile(filePath, store)) {
+      const tmp = `${filePath}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(store, null, 2));
+      fs.renameSync(tmp, filePath);
+    }
+  } catch (error) {
+    if (!usesRemoteStore()) {
+      console.warn("[store] Não consegui gravar store.json:", error);
+    }
   }
   const nextMapDrops = store.templates.reduce((n, item) => n + item.drops.length, 0);
   const diskMapDrops = diskMaps.reduce(
@@ -701,12 +800,18 @@ function persist(): void {
   if (store.scrimPresets.length > 0) {
     tryWriteJsonFile(scrimPresetsPath(dataDir()), store.scrimPresets);
   }
-  if (store.templates.some((item) => item.drops.length > 0)) {
+  if (!usesEphemeralFs() && store.templates.some((item) => item.drops.length > 0)) {
     tryWriteJsonFile(mapPresetsPath(repoPresetsDir()), store.templates);
   }
-  if (store.scrimPresets.length > 0) {
+  if (!usesEphemeralFs() && store.scrimPresets.length > 0) {
     tryWriteJsonFile(scrimPresetsPath(repoPresetsDir()), store.scrimPresets);
   }
+}
+
+function persist(): void {
+  const store = getStore();
+  persistToFilesystem(store);
+  dirty = true;
   publish({ type: "store" });
 }
 

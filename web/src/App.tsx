@@ -688,8 +688,9 @@ function Home({
             Salvar preset de scrim
           </button>
           <p className="muted">
-            O preset fica na pasta do sistema e não some quando o código atualiza. No Railway,
-            monte um volume em /data (DATA_DIR) para não perder dados ao redeployar.
+            O preset fica na pasta do sistema e não some quando o código atualiza. Com
+            <code>DATABASE_URL</code> na Vercel (Neon), tabelas e presets persistem. O bot Discord
+            continua precisando de um host Node 24/7.
           </p>
           <button className="btn" type="submit" disabled={saving}>
             {saving ? "Criando no Discord…" : "Criar scrim no Discord"}
@@ -985,7 +986,7 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
         </p>
         {!yuniteConfigured ? (
           <p className="muted">
-            Configure <code>YUNITE_API_KEY</code> no Railway para o site puxar a colocação.
+            Configure <code>YUNITE_API_KEY</code> na Vercel para o site puxar a colocação.
           </p>
         ) : null}
         {yuniteTournaments.length > 0 ? (

@@ -32,18 +32,20 @@ npm run dev
 
 Sem `DISCORD_TOKEN` o site ainda abre; o card do bot fica offline até o token estar certo.
 
-## Produção
+## Produção (Vercel = site; bot = host 24/7)
 
-São dois hosts, de propósito:
+São dois papéis, de propósito:
 
-- **Vercel** (`buildscrims.online`) — só o site React (Vite). Não roda o bot Discord.
-- **Railway** (`handsome-curiosity`) — bot Discord + API Express (`/api`, `/tabelas` via proxy).
+- **Vercel** (`https://buildscrims.online`) — site React + API serverless (`/api`). Tabelas públicas, detalhe da tabela, login da staff e CRUD de tabelas **não precisam do Railway**.
+- **Bot Discord** — o gateway do Discord **não roda na Vercel**. Sem um processo Node 24/7 (Fly.io, VPS, Railway, etc.), check-in, lobby, código da partida e mapa de drop ficam offline. O site e as tabelas continuam no ar.
 
-O `npm start` (`node dist/index.js`) é o processo Node. A Vercel **não** deve publicar essa pasta. Se o domínio mostrar código-fonte preto (`startBot` / `createWebApp`), o Output Directory está em `dist` em vez de `dist/public`.
+A Vercel **não** deve publicar a pasta `dist` inteira. Se o domínio mostrar código-fonte preto (`startBot` / `createWebApp`), o Output Directory está em `dist` em vez de `dist/public`.
 
-## Domínio próprio (Vercel + Railway)
+O disco da Vercel é efêmero. Tabelas e presets da staff precisam de **Postgres** (`DATABASE_URL`, Neon gratuito). O `store.json` que existia só num volume Railway **não é lido daqui** — se não houver backup, esses dados antigos se perderam.
 
-O frontend usa caminhos relativos (`/api/...`, `/tabelas`). A Vercel serve o HTML/JS e encaminha `/api` para o Railway. O domínio público **precisa existir no Railway** (Settings → Networking → Generate Domain) — sem isso `/tabelas` mostra falha na requisição.
+## Domínio próprio (Vercel)
+
+O frontend usa caminhos relativos (`/api/...`, `/tabelas`). A Vercel serve o HTML/JS **e** as funções `/api`.
 
 1. Na Vercel → projeto → **Settings → Build & Development**:
    - Framework Preset: **Vite**
@@ -53,18 +55,26 @@ O frontend usa caminhos relativos (`/api/...`, `/tabelas`). A Vercel serve o HTM
 2. DNS no registrador (Hostinger etc.), apontando para a Vercel:
    - A `@` → `76.76.21.21`
    - CNAME `www` → `cname.vercel-dns.com` (ou o que a Vercel mostrar)
-3. Na Vercel → **Domains**, o domínio `buildscrims.online` fica neste projeto. Não precisa (e não deve) apontar o domínio no Railway.
-4. No Railway, gere um domínio `*.up.railway.app` e deixe o serviço Active. Se o hostname mudou, na Vercel → **Settings → Environment Variables**:
-   - `RAILWAY_API_ORIGIN=https://SEU-SERVICO.up.railway.app` (sem barra no final)
-5. Variáveis no **Railway** (o backend que executa OAuth e o bot):
+3. Na Vercel → **Domains**, o domínio `buildscrims.online` fica neste projeto.
+4. Variáveis na **Vercel** (Production + Preview):
    - `PUBLIC_BASE_URL=https://buildscrims.online`
-   - opcional: `DISCORD_REDIRECT_URI=https://buildscrims.online/api/auth/discord/callback`
-   - opcional: `PUBLIC_HOSTS=www.buildscrims.online,fortnite-scrim-bot.vercel.app`
-6. Discord Developer Portal → OAuth2 → Redirects, cadastre:
+   - `SESSION_SECRET`, `ADMIN_PASSWORD`, `ADMIN_ROLE_IDS`
+   - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_TOKEN`, `DISCORD_GUILD_ID`
+   - `YUNITE_API_KEY`
+   - `DATABASE_URL` (Neon — veja abaixo)
+5. Discord Developer Portal → OAuth2 → Redirects, cadastre:
    - `https://buildscrims.online/api/auth/discord/callback`
-7. Confira `https://buildscrims.online/api/health` — tem que voltar `"service":"fortnite-scrim-bot"`, não `"Application not found"`.
+6. Confira `https://buildscrims.online/api/health` — tem que voltar `"service":"fortnite-scrim-bot"` e `"host":"vercel"`.
 
-Com Docker (só o backend Railway):
+### Neon (gratuito) para as tabelas
+
+1. Crie um projeto em [https://neon.tech](https://neon.tech)
+2. Copie a connection string e cole na Vercel como `DATABASE_URL`
+3. A API cria a tabela `app_store` sozinha no primeiro request
+
+Sem `DATABASE_URL`, `/tabelas` ainda abre (não dá mais “Falha na requisição”), mas o que a staff salvar some no próximo cold start.
+
+Com Docker (só o bot + Express 24/7):
 
 ```bash
 docker build -t fortnite-scrim-bot .
@@ -73,6 +83,7 @@ docker run -p 3000:3000 --env-file .env fortnite-scrim-bot
 
 ## Estrutura
 
-- `src/bot` — cliente Discord
-- `src/web` — API + login do painel
+- `src/bot` — cliente Discord (host 24/7)
+- `src/web` — API do site (Express local + funções Vercel)
+- `api/` — handler serverless da Vercel
 - `web/` — interface no navegador
