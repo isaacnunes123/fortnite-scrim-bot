@@ -712,6 +712,9 @@ export async function createWebApp(options: { serveUi?: boolean; app?: express.E
       }
       res.sendFile(path.join(publicDir, "index.html"));
     });
+  } else if (process.env.NODE_ENV === "production") {
+    console.warn("[web] UI não compilada — sem Vite em produção (HTTP /health segue).");
+    return app;
   } else {
     const { createServer } = await import("vite");
     const vite = await createServer({

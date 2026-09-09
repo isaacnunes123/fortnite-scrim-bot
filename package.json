@@ -10,7 +10,7 @@
     "build:bot": "tsc -p tsconfig.json",
     "build:web": "vite build",
     "vercel-build": "vite build",
-    "start": "node dist/index.js",
+    "start": "node dist/bot.js",
     "bot": "node dist/bot.js",
     "bot:dev": "tsx watch src/bot.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
