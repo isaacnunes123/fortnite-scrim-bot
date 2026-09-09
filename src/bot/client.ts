@@ -5,9 +5,12 @@ import { env } from "../env.js";
 import { enforceHomeGuild } from "./guild.js";
 import { pulseBotHeartbeat, startBotHeartbeat, stopBotHeartbeat } from "./heartbeat.js";
 
+export type BotPresence = "online" | "offline" | "unknown";
+
 export type BotStatus = {
   configured: boolean;
   ready: boolean;
+  presence: BotPresence;
   username: string | null;
   id: string | null;
   guildCount: number;
@@ -32,10 +35,12 @@ export function getBotStatus(): BotStatus {
   const client = runtime.client;
   const ready = Boolean(client?.isReady());
   const user = client?.user;
+  const configured = Boolean(client) || Boolean(env.discordToken);
 
   return {
-    configured: Boolean(client),
+    configured,
     ready,
+    presence: ready ? "online" : configured ? "offline" : "unknown",
     username: user?.tag ?? null,
     id: user?.id ?? null,
     guildCount: client?.guilds.cache.size ?? 0,
@@ -55,8 +60,11 @@ export async function startBot(token: string): Promise<Client | null> {
     intents: [GatewayIntentBits.Guilds],
   });
 
+  console.log("[bot] Intents: Guilds (não precisa de Privileged Gateway Intents)");
+
   client.once(Events.ClientReady, (readyClient) => {
     runtime.readyAt = Date.now();
+    console.log(`[bot] Logged in as ${readyClient.user.tag}`);
     console.log(`[bot] Conectado como ${readyClient.user.tag}`);
     startBotHeartbeat(getBotStatus);
     pulseBotHeartbeat(getBotStatus());

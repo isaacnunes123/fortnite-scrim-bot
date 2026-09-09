@@ -106,6 +106,16 @@ function formatUptime(ms: number | null): string {
   return `${hours}h ${minutes % 60}m`;
 }
 
+function botPresence(status: BotStatus | null): "online" | "offline" | "unknown" {
+  if (status?.presence === "online" || status?.ready) {
+    return "online";
+  }
+  if (status?.presence === "offline") {
+    return "offline";
+  }
+  return "unknown";
+}
+
 export function App() {
   useBrandTheme("scrims", "Painel · BUILD SCRIMS");
   const [auth, setAuth] = useState<AuthState>({
@@ -184,7 +194,14 @@ export function App() {
     );
   }
 
-  const online = Boolean(status?.ready);
+  const presence = botPresence(status);
+  const pillClass = presence === "online" ? "ok" : presence === "offline" ? "off" : "warn";
+  const pillLabel =
+    presence === "online"
+      ? "Bot online"
+      : presence === "offline"
+        ? "Bot Discord offline"
+        : "Bot: sem confirmação";
 
   return (
     <div className="shell">
@@ -212,9 +229,7 @@ export function App() {
           <button className="btn secondary" type="button" onClick={() => setView({ page: "presets" })}>
             Presets
           </button>
-          <span className={`pill ${online ? "ok" : "off"}`}>
-            {online ? "Bot online" : "Bot Discord offline"}
-          </span>
+          <span className={`pill ${pillClass}`}>{pillLabel}</span>
           <button className="btn secondary" type="button" onClick={onLogout}>
             Sair
           </button>
@@ -399,7 +414,14 @@ function Home({
             Isso cria a categoria no Discord (check-in, mapa, código, chat, saída, fill e admin).
             Depois, no painel da scrim, você define até quando a saída é livre.
           </p>
-          {!status?.ready ? <p className="error">Bot Discord offline</p> : null}
+          {botPresence(status) === "offline" ? <p className="error">Bot Discord offline</p> : null}
+          {botPresence(status) === "unknown" ? (
+            <p className="muted">
+              {status?.note ??
+                "A Vercel não confirma o gateway. Se o Discord estiver verde, o bot está no ar. Defina BOT_PROCESS_URL na Vercel."}
+            </p>
+          ) : null}
+          {botPresence(status) === "online" && status?.note ? <p className="muted">{status.note}</p> : null}
           {error ? <p className="error">{error}</p> : null}
           <label htmlFor="scrim-preset">Carregar preset de scrim</label>
           <select

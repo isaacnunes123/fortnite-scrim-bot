@@ -54,6 +54,25 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function createWebApp(options: { serveUi?: boolean } = {}) {
   const app = express();
+  const host = options.serveUi === false ? "bot" : "node";
+  app.get("/health", (_req, res) => {
+    res.status(200).json({
+      ok: true,
+      service: "fortnite-scrim-bot",
+      host,
+      ...getBotStatus(),
+    });
+  });
+  if (options.serveUi === false) {
+    app.get("/", (_req, res) => {
+      res.status(200).json({
+        ok: true,
+        service: "fortnite-scrim-bot",
+        host: "bot",
+        hint: "/health",
+      });
+    });
+  }
   setupExpress(app);
   app.use("/uploads", express.static(uploadDir));
   app.use("/preset-files", express.static(path.join(process.cwd(), "presets", "maps")));
@@ -79,14 +98,6 @@ export async function createWebApp(options: { serveUi?: boolean } = {}) {
       clearInterval(ping);
       off();
     });
-  });
-
-  app.get("/api/bot/status", async (req, res) => {
-    if (!(await isStaffSession(req))) {
-      res.status(401).json({ error: "Não autenticado" });
-      return;
-    }
-    res.json(getBotStatus());
   });
 
   app.get("/api/discord/guilds", async (req, res) => {

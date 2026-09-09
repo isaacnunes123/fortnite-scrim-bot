@@ -44,8 +44,7 @@ export async function readFreshBotHeartbeat(): Promise<HeartbeatStatus | null> {
   if (!Number.isFinite(age) || age > STALE_MS) {
     return null;
   }
-  const payload = asBotStatus(row.payload);
-  return payload?.ready ? payload : null;
+  return asBotStatus(row.payload);
 }
 
 function asBotStatus(value: unknown): HeartbeatStatus | null {

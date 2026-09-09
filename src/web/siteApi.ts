@@ -3,6 +3,7 @@ import express, { type Express, type Request, type Response } from "express";
 import { clearCookieOptions, env } from "../env.js";
 import { discordRedirectUri, isAllowedPublicHost, publicBaseUrl } from "../scrims/links.js";
 import { resolvePublicMapUrl, savePresetMap, saveUploadedMap } from "../scrims/maps.js";
+import { usesRemoteStore } from "../scrims/durable.js";
 import {
   ensureStore,
   flushStore,
@@ -46,13 +47,18 @@ import {
 } from "./staffAuth.js";
 import { readFreshBotHeartbeat } from "../bot/heartbeat.js";
 
+export type BotPresence = "online" | "offline" | "unknown";
+
 export type BotStatusPayload = {
   configured: boolean;
   ready: boolean;
+  presence: BotPresence;
   username: string | null;
   id: string | null;
   guildCount: number;
   uptimeMs: number | null;
+  source?: "local" | "process" | "heartbeat" | "none";
+  botProcessUrlConfigured?: boolean;
   note?: string;
 };
 
@@ -135,12 +141,31 @@ export function parseWindows(raw: unknown): PriorityWindow[] {
 
 export function offlineBotStatus(): BotStatusPayload {
   return {
-    configured: Boolean(env.discordToken),
+    configured: false,
     ready: false,
+    presence: "unknown",
     username: null,
     id: null,
     guildCount: 0,
     uptimeMs: null,
+    source: "none",
+    botProcessUrlConfigured: Boolean(env.botProcessUrl),
+  };
+}
+
+function withPresence(
+  status: Omit<BotStatusPayload, "presence"> & { presence?: BotPresence },
+  presence: BotPresence,
+  source: NonNullable<BotStatusPayload["source"]>,
+  note?: string,
+): BotStatusPayload {
+    return {
+    ...status,
+    presence,
+    ready: presence === "online",
+    source,
+    botProcessUrlConfigured: Boolean(env.botProcessUrl),
+    note,
   };
 }
 
@@ -149,9 +174,17 @@ function asBotStatusPayload(value: unknown): BotStatusPayload | null {
     return null;
   }
   const record = value as Record<string, unknown>;
+  const ready = Boolean(record.ready);
+  const presence =
+    record.presence === "online" || record.presence === "offline" || record.presence === "unknown"
+      ? record.presence
+      : ready
+        ? "online"
+        : "offline";
   return {
     configured: Boolean(record.configured ?? record.ready),
-    ready: Boolean(record.ready),
+    ready,
+    presence,
     username: typeof record.username === "string" ? record.username : null,
     id: typeof record.id === "string" ? record.id : null,
     guildCount: Number(record.guildCount) || 0,
@@ -159,36 +192,75 @@ function asBotStatusPayload(value: unknown): BotStatusPayload | null {
   };
 }
 
-async function fetchBotProcessStatus(): Promise<BotStatusPayload | null> {
+type ProcessProbe =
+  | { kind: "ready" | "down"; status: BotStatusPayload }
+  | { kind: "unset" }
+  | { kind: "unreachable" };
+
+async function probeBotProcess(): Promise<ProcessProbe> {
   if (!env.botProcessUrl) {
-    return null;
+    return { kind: "unset" };
   }
   try {
     const response = await fetch(`${env.botProcessUrl}/health`, {
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) {
-      return null;
+      return { kind: "unreachable" };
     }
-    return asBotStatusPayload(await response.json());
+    const status = asBotStatusPayload(await response.json());
+    if (!status) {
+      return { kind: "unreachable" };
+    }
+    return { kind: status.ready ? "ready" : "down", status };
   } catch {
-    return null;
+    return { kind: "unreachable" };
   }
 }
 
 async function resolveBotStatus(local?: BotStatusPayload): Promise<BotStatusPayload> {
   if (local?.ready) {
-    return local;
+    return withPresence(local, "online", "local");
   }
-  const remote = await fetchBotProcessStatus();
-  if (remote?.ready) {
-    return remote;
+  const probe = await probeBotProcess();
+  if (probe.kind === "ready") {
+    return withPresence(probe.status, "online", "process");
   }
   const beat = await readFreshBotHeartbeat();
   if (beat?.ready) {
-    return beat;
+    return withPresence(beat, "online", "heartbeat");
   }
-  return local ?? offlineBotStatus();
+  if (probe.kind === "down") {
+    return withPresence(
+      probe.status,
+      "offline",
+      "process",
+      "O processo do bot respondeu, mas o Discord não está conectado. Nos Deploy Logs do Railway procure por Logged in / DISCORD_TOKEN.",
+    );
+  }
+  if (beat && !beat.ready) {
+    return withPresence(
+      beat,
+      "offline",
+      "heartbeat",
+      "O host do bot está no ar, mas o gateway do Discord não. Veja DISCORD_TOKEN e os logs Logged in no Railway.",
+    );
+  }
+  const base = local ?? offlineBotStatus();
+  if (probe.kind === "unset") {
+    return withPresence(
+      { ...base, configured: false, ready: false },
+      "unknown",
+      "none",
+      "A Vercel não enxerga o Railway. Se o ícone do bot estiver verde no Discord, ele está no ar. Na Vercel defina BOT_PROCESS_URL=https://SEU-SERVICO.up.railway.app (sem barra no final). URL *.railway.internal não funciona daqui.",
+    );
+  }
+  return withPresence(
+    { ...base, configured: Boolean(env.botProcessUrl), ready: false },
+    "unknown",
+    "none",
+    "BOT_PROCESS_URL não respondeu. No Railway: Settings → Networking → Generate Domain, depois cole https://….up.railway.app na Vercel (sem barra no final).",
+  );
 }
 
 async function proxyToBotProcess(req: Request, res: Response): Promise<boolean> {
@@ -273,7 +345,11 @@ export function setupExpress(app: Express): void {
     next();
   });
   app.use(cookieParser(env.sessionSecret));
-  app.use(async (_req, res, next) => {
+  app.use(async (req, res, next) => {
+    if (req.path === "/health" || (req.path === "/" && req.method === "GET")) {
+      next();
+      return;
+    }
     try {
       await ensureStore();
       next();
@@ -294,12 +370,13 @@ export function setupExpress(app: Express): void {
 }
 
 export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {}): void {
-  app.get("/api/health", (_req, res) => {
+  app.get("/api/health", async (_req, res) => {
     const persistence = persistenceMode();
     const warning =
       persistence === "memory"
         ? "Sem DATABASE_URL as tabelas somem a cada cold start. Crie um Neon gratuito e cole DATABASE_URL na Vercel."
         : storeRemoteError();
+    const bot = await resolveBotStatus(options.botStatus?.());
     res.json({
       ok: true,
       service: "fortnite-scrim-bot",
@@ -309,6 +386,15 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
       yuniteConfigured: yuniteConfigured(),
       publicBaseUrl: publicBaseUrl(),
       discordRedirectUri: discordRedirectUri(),
+      botProcessUrlConfigured: Boolean(env.botProcessUrl),
+      heartbeatStore: usesRemoteStore(),
+      bot: {
+        ready: bot.ready,
+        presence: bot.presence,
+        source: bot.source ?? "none",
+        username: bot.username,
+        note: bot.note ?? null,
+      },
     });
   });
 

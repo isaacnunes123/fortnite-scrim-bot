@@ -1,4 +1,5 @@
 import { startBot, getBotStatus } from "./bot/client.js";
+import { pulseBotHeartbeat, startBotHeartbeat } from "./bot/heartbeat.js";
 import { env } from "./env.js";
 import { ensureStore } from "./scrims/store.js";
 import { createWebApp } from "./web/app.js";
@@ -11,23 +12,7 @@ import { createWebApp } from "./web/app.js";
  *   node dist/bot.js
  */
 async function main() {
-  if (!env.discordToken) {
-    console.error("[bot] DISCORD_TOKEN vazio — este processo é só o gateway e precisa do token.");
-    process.exit(1);
-  }
-
-  await ensureStore();
-
   const app = await createWebApp({ serveUi: false });
-  app.get("/health", (_req, res) => {
-    const status = getBotStatus();
-    res.json({
-      ok: true,
-      service: "fortnite-scrim-bot",
-      host: "bot",
-      ...status,
-    });
-  });
 
   await new Promise<void>((resolve, reject) => {
     const server = app.listen(env.port, "0.0.0.0", () => {
@@ -37,11 +22,26 @@ async function main() {
     server.on("error", reject);
   });
 
+  startBotHeartbeat(getBotStatus);
+  pulseBotHeartbeat(getBotStatus());
+
+  if (!env.discordToken) {
+    console.error("[bot] DISCORD_TOKEN vazio — o HTTP fica no ar para o Railway, mas o Discord fica offline.");
+    return;
+  }
+
+  try {
+    await ensureStore();
+  } catch (error) {
+    console.error("[bot] Store atrasada (o gateway sobe mesmo assim):", error);
+  }
+
   try {
     await startBot(env.discordToken);
   } catch (error) {
     console.error("[bot] Falha ao conectar no Discord:", error);
-    process.exit(1);
+    console.error("[bot] Processo HTTP segue no ar — Railway não deve matar o healthcheck.");
+    pulseBotHeartbeat(getBotStatus());
   }
 }
 

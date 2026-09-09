@@ -35,13 +35,19 @@ export async function uploadMap(file: File, path = "/api/maps/upload"): Promise<
   return data.url;
 }
 
+export type BotPresence = "online" | "offline" | "unknown";
+
 export type BotStatus = {
   configured: boolean;
   ready: boolean;
+  presence?: BotPresence;
   username: string | null;
   id: string | null;
   guildCount: number;
   uptimeMs: number | null;
+  source?: "local" | "process" | "heartbeat" | "none";
+  botProcessUrlConfigured?: boolean;
+  note?: string;
 };
 
 export type DropKind = "poi" | "contested" | "locked";

@@ -292,7 +292,11 @@ select {
 }
 
 .pill.off {
-  color: var(--warn);
+  color: var(--danger);
+}
+
+.pill.warn {
+  color: #fbbf24;
 }
 
 .pill.live {

@@ -60,7 +60,12 @@ Não coloque o site de volta no Railway. O domínio público fica na Vercel.
    - `SESSION_SECRET` (o mesmo da Vercel, se for encaminhar o painel)
    - `DATABASE_URL` (o mesmo Neon da Vercel — senão check-in e tabelas não compartilham dados)
    - `ADMIN_ROLE_IDS`, `YUNITE_API_KEY`, `PUBLIC_BASE_URL=https://buildscrims.online`
-4. Na **Vercel**, opcional: `BOT_PROCESS_URL=https://SEU-HOST-DO-BOT` (sem barra no final). Aí o painel consulta `/health` desse host e encaminha “Criar scrim no Discord”.
+4. Na **Vercel**, para o painel **confirmar** que o bot está online (e para “Criar scrim no Discord”):
+   - No Railway, serviço **bot** → **Settings → Networking → Generate Domain**
+   - Copie a URL pública, **sem barra no final**, por exemplo: `https://bot-production-xxxx.up.railway.app`
+   - Na Vercel: `BOT_PROCESS_URL=https://bot-production-xxxx.up.railway.app`
+   - Não use `*.railway.internal` — a Vercel não alcança a rede privada do Railway
+   - Sem essa variável **e** sem o mesmo `DATABASE_URL` nos dois lados, o painel fica em **Bot: sem confirmação** mesmo se o Discord estiver verde. Isso não significa que o bot caiu.
 
 **Fly.io:** `fly launch` neste repo, start `node dist/bot.js`, cole as env. Desligue auto-stop (`min_machines_running = 1`) — se a máquina dormir, o Discord cai.  
 **Render:** Web Service ou Background Worker, build `npm install && npm run build:bot`, start `npm run bot`.  
@@ -71,7 +76,18 @@ Não coloque o site de volta no Railway. O domínio público fica na Vercel.
 - **Settings → Build → Build Command:** `npm run build:bot`
 - **Settings → Deploy → Start Command:** `node dist/bot.js`
 
-O `railway.json` já define isso. Depois de salvar, redeploy.
+O `railway.json` já define isso (`/health` na porta `PORT`, sem pre-deploy). Depois de salvar, redeploy.
+
+**O bot ainda aparece offline?** Checklist:
+
+1. Railway → serviço **bot** → **Deploy Logs**. Procure `Logged in as` / `Conectado como`. Se não aparecer:
+   - `DISCORD_TOKEN` vazio ou inválido (Reset Token no portal e cole de novo no Railway)
+   - start command ainda não é `node dist/bot.js`
+   - o processo crashou depois do start
+2. [Discord Developer Portal](https://discord.com/developers/applications) → Bot → **Privileged Gateway Intents**: este projeto só usa **Guilds**. Não precisa ligar Message Content / Server Members. O bot precisa estar **convidado no servidor** (`DISCORD_GUILD_ID`).
+3. Railway → **Settings → Networking**: precisa de domínio **público**. Health: `https://SEU-DOMINIO.up.railway.app/health` deve voltar JSON com `"host":"bot"`.
+4. Vercel → `BOT_PROCESS_URL` = essa mesma URL, **sem** `/health` e **sem** barra no final.
+5. Se `https://buildscrims.online/api/health` mostrar `"bot":{"presence":"unknown"}`, o site não está vendo o Railway — Discord verde + painel amarelo é esperado até o passo 4.
 
 A Vercel **não** deve publicar a pasta `dist` inteira. Se o domínio mostrar código-fonte preto (`startBot` / `createWebApp`), o Output Directory está em `dist` em vez de `dist/public`.
 
@@ -96,7 +112,7 @@ O frontend usa caminhos relativos (`/api/...`, `/tabelas`). A Vercel serve o HTM
    - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_TOKEN`, `DISCORD_GUILD_ID`
    - `YUNITE_API_KEY`
    - `DATABASE_URL` (Neon — veja abaixo)
-   - `BOT_PROCESS_URL` (URL do host Node do bot, se já existir)
+   - `BOT_PROCESS_URL` (URL pública do Railway, sem barra no final — sem isso o painel não marca “online”)
 5. Discord Developer Portal → OAuth2 → Redirects, cadastre:
    - `https://buildscrims.online/api/auth/discord/callback`
 6. Confira `https://buildscrims.online/api/health` — tem que voltar `"service":"fortnite-scrim-bot"` e `"host":"vercel"`.

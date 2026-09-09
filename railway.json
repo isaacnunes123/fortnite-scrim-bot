@@ -9,7 +9,7 @@
     "preDeployCommand": null,
     "startCommand": "node dist/bot.js",
     "healthcheckPath": "/health",
-    "healthcheckTimeout": 30,
+    "healthcheckTimeout": 60,
     "restartPolicyType": "ON_FAILURE",
     "sleepApplication": false
   }
