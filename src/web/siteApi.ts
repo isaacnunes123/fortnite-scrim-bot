@@ -3,7 +3,7 @@ import cookieParser from "cookie-parser";
 import express, { type Express, type Request, type Response } from "express";
 import { clearCookieOptions, env } from "../env.js";
 import { discordRedirectUri, isAllowedPublicHost, publicBaseUrl } from "../scrims/links.js";
-import { persistMapImage, readPersistedMap, resolvePublicMapUrl } from "../scrims/maps.js";
+import { DEFAULT_MAP_URL, persistMapImage, readPersistedMap, resolvePublicMapUrl } from "../scrims/maps.js";
 import { usesRemoteStore } from "../scrims/durable.js";
 import {
   ensureStore,
@@ -39,6 +39,8 @@ import {
   clampMaxContestedDrops,
   clampTeamsPerDrop,
   createScrim,
+  ensureScrimHasDrops,
+  findDropAt,
   isScrimMode,
   type PriorityWindow,
   type PublicTable,
@@ -63,6 +65,8 @@ import {
 import { DiscordRestError, fetchGuildRoles } from "./discordRest.js";
 import { handleDiscordHttpInteraction } from "./discordInteractions.js";
 import { readFreshBotHeartbeat } from "../bot/heartbeat.js";
+import { resolveMapAccess } from "./dropAuth.js";
+import { applyPlayerDropViaRest } from "./dropRest.js";
 
 export type BotPresence = "online" | "offline" | "unknown";
 
@@ -286,6 +290,9 @@ const RAILWAY_DOWN_ERROR =
 function isVercelDiscordRestPath(req: Request): boolean {
   const path = String(req.path || req.url || "").split("?")[0] ?? "";
   if (/^\/api\/discord\/interactions\/?$/.test(path)) {
+    return true;
+  }
+  if (/^\/api\/public\//.test(path) || /^\/api\/auth\//.test(path) || /^\/api\/map-images\//.test(path)) {
     return true;
   }
   if (req.method === "POST" && /^\/api\/scrims\/?$/.test(path)) {
@@ -1085,6 +1092,88 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
       }
     },
   );
+
+  app.get("/api/public/scrims/:id/map", async (req, res) => {
+    await pullRemoteStore();
+    const scrim = getScrim(String(req.params.id));
+    if (!scrim) {
+      res.status(404).json({ error: "Scrim não encontrada", login: false });
+      return;
+    }
+    const live = ensureScrimHasDrops(scrim.id) ?? scrim;
+    const access = await resolveMapAccess(req, live);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error, login: Boolean(access.login) });
+      return;
+    }
+    res.json({
+      name: live.name,
+      mapImageUrl: resolvePublicMapUrl(live.mapImageUrl).url || DEFAULT_MAP_URL,
+      drops: live.drops,
+      teamName: access.access.teamName,
+      dropped: access.access.dropped,
+      canClaim: access.access.canClaim,
+      dropsOpen: live.dropsOpen,
+      teamsPerDrop: live.teamsPerDrop,
+      maxContestedDrops: live.maxContestedDrops,
+      fortniteNick: access.access.fortniteNick,
+      steps: access.access.isStaff
+        ? []
+        : access.access.dropped
+          ? [
+              "Drop confirmado.",
+              "No Discord você já deve ver o canal de código e o getting-off.",
+            ]
+          : [
+              "Clique no retângulo do drop no mapa.",
+              "Confirme. Se o drop já tiver 1 time, o segundo vira disputa (quando ainda houver disputa livre no mapa).",
+              "Depois o Discord libera código e getting-off.",
+            ],
+    });
+  });
+
+  app.post("/api/public/scrims/:id/drop", async (req, res) => {
+    await pullRemoteStore();
+    const scrim = getScrim(String(req.params.id));
+    if (!scrim) {
+      res.status(404).json({ error: "Scrim não encontrada" });
+      return;
+    }
+    const live = ensureScrimHasDrops(scrim.id) ?? scrim;
+    const access = await resolveMapAccess(req, live);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error, login: Boolean(access.login) });
+      return;
+    }
+    if (!access.access.canClaim) {
+      res.status(403).json({
+        error: live.dropsOpen
+          ? "Você não pode marcar drop."
+          : "A staff fechou a marcação de drops.",
+      });
+      return;
+    }
+    if (live.drops.length === 0) {
+      res.status(400).json({
+        error: "Este mapa ainda não tem drops. A staff precisa salvar o preset de mapa.",
+      });
+      return;
+    }
+    let dropId = String(req.body?.dropId ?? "");
+    if (!dropId && req.body?.x != null && req.body?.y != null) {
+      dropId = findDropAt(live.id, Number(req.body.x), Number(req.body.y))?.id ?? "";
+    }
+    if (!dropId) {
+      res.status(400).json({ error: "Clique dentro de um drop" });
+      return;
+    }
+    try {
+      const drop = await applyPlayerDropViaRest(scrim.id, access.access.userId, dropId);
+      await commitJson(res, 200, { drop });
+    } catch (error) {
+      fail(res, error, "Não foi possível marcar o drop");
+    }
+  });
 
   app.get("/api/public/tabelas", (_req, res) => {
     res.json({ boards: listPublicBoards() });

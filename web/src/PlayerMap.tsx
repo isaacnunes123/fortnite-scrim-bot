@@ -50,7 +50,7 @@ export function PlayerMap() {
       return "login";
     }
     if (!response.ok) {
-      throw new Error(data.error || "Sem acesso ao mapa");
+      throw new Error(playerMapError(data.error));
     }
     setName(data.name ?? "");
     setTeamName(data.teamName ?? "");
@@ -77,14 +77,23 @@ export function PlayerMap() {
           return;
         }
         setError(null);
-        timer = window.setInterval(() => {
-          load().catch(() => undefined);
-        }, 2000);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Sem acesso ao mapa");
         }
       }
+      if (cancelled) {
+        return;
+      }
+      timer = window.setInterval(() => {
+        load()
+          .then((result) => {
+            if (result === "ok") {
+              setError(null);
+            }
+          })
+          .catch(() => undefined);
+      }, 2000);
     })();
     return () => {
       cancelled = true;
@@ -205,7 +214,7 @@ export function PlayerMap() {
       )}
 
       {!ready ? (
-        <p className="muted hint">Abrindo mapa…</p>
+        error ? null : <p className="muted hint">Abrindo mapa…</p>
       ) : (
       <div className="player-layout">
         <div className="card map-card">
@@ -294,6 +303,18 @@ export function PlayerMap() {
   );
 }
 
+function isInfraError(message: string): boolean {
+  return /Railway|BOT_PROCESS_URL|slash command|gateway|Interactions Endpoint/i.test(message);
+}
+
+function playerMapError(message?: string): string {
+  const text = (message || "").trim();
+  if (!text || isInfraError(text)) {
+    return "Não foi possível abrir o mapa. Entre de novo com o Discord e tente outra vez.";
+  }
+  return text;
+}
+
 function dataError(data: { error?: string }): string {
-  return data.error || "Falha";
+  return playerMapError(data.error || "Falha");
 }

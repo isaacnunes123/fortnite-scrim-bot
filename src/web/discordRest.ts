@@ -7,6 +7,7 @@ export type DiscordMemberInfo = {
   roles: string[];
   displayName: string;
   guildName: string;
+  avatarUrl: string;
 };
 
 export type DiscordRoleInfo = {
@@ -86,11 +87,26 @@ export async function fetchGuildName(): Promise<string> {
   return typeof record?.name === "string" ? record.name : env.discordGuildId;
 }
 
-export async function fetchGuildMember(userId: string): Promise<DiscordMemberInfo | null> {
-  if (!env.discordToken || !env.discordGuildId || !userId) {
+export function discordAvatarUrl(userId: string, avatar?: string | null): string {
+  if (avatar) {
+    const ext = avatar.startsWith("a_") ? "gif" : "png";
+    return `https://cdn.discordapp.com/avatars/${userId}/${avatar}.${ext}?size=128`;
+  }
+  return `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(userId || "0") % 5n)}.png`;
+}
+
+export async function addMemberRole(guildId: string, userId: string, roleId: string): Promise<void> {
+  await discordRequest("PUT", `/guilds/${guildId}/members/${userId}/roles/${roleId}`);
+}
+
+export async function fetchGuildMember(
+  userId: string,
+  guildId = env.discordGuildId,
+): Promise<DiscordMemberInfo | null> {
+  if (!env.discordToken || !guildId || !userId) {
     return null;
   }
-  const result = await discordGet(`/guilds/${env.discordGuildId}/members/${userId}`);
+  const result = await discordGet(`/guilds/${guildId}/members/${userId}`);
   if (!result.ok) {
     return null;
   }
@@ -103,11 +119,14 @@ export async function fetchGuildMember(userId: string): Promise<DiscordMemberInf
   const nick = typeof record.nick === "string" ? record.nick.trim() : "";
   const globalName = typeof user?.global_name === "string" ? user.global_name.trim() : "";
   const username = typeof user?.username === "string" ? user.username.trim() : "";
+  const id = String(user?.id ?? userId);
+  const avatar = typeof user?.avatar === "string" ? user.avatar : "";
   return {
-    id: String(user?.id ?? userId),
+    id,
     roles,
     displayName: nick || globalName || username || userId,
-    guildName: await fetchGuildName(),
+    guildName: guildId === env.discordGuildId ? await fetchGuildName() : "",
+    avatarUrl: discordAvatarUrl(id, avatar),
   };
 }
 

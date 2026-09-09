@@ -6,13 +6,10 @@ import { getBotStatus, getDiscordClient } from "../bot/client.js";
 import { listBotGuilds, notifyInvite, resolveDiscordPlayer, rosterForScrim } from "../bot/guild.js";
 import { subscribe } from "../scrims/live.js";
 import {
-  DEFAULT_MAP_URL,
   persistMapImage,
-  resolvePublicMapUrl,
   uploadDir,
 } from "../scrims/maps.js";
 import { saveYuniteTournamentId } from "./publicTables.js";
-import { resolveMapAccess } from "./dropAuth.js";
 import { isStaffSession } from "./staffAuth.js";
 import {
   fail,
@@ -24,7 +21,6 @@ import {
   addInvite,
   addLog,
   ensureScrimHasDrops,
-  findDropAt,
   flushStore,
   getActiveBan,
   getScrim,
@@ -444,87 +440,6 @@ export async function createWebApp(options: { serveUi?: boolean; app?: express.E
       return;
     }
     res.json({ ok: true });
-  });
-
-  app.get("/api/public/scrims/:id/map", async (req, res) => {
-    const scrim = getScrim(String(req.params.id));
-    if (!scrim) {
-      res.status(404).json({ error: "Scrim não encontrada", login: false });
-      return;
-    }
-    const live = ensureScrimHasDrops(scrim.id) ?? scrim;
-    const access = await resolveMapAccess(req, live);
-    if (!access.ok) {
-      res.status(access.status).json({ error: access.error, login: Boolean(access.login) });
-      return;
-    }
-    res.json({
-      name: live.name,
-      mapImageUrl: resolvePublicMapUrl(live.mapImageUrl).url || DEFAULT_MAP_URL,
-      drops: live.drops,
-      teamName: access.access.teamName,
-      dropped: access.access.dropped,
-      canClaim: access.access.canClaim,
-      dropsOpen: live.dropsOpen,
-      teamsPerDrop: live.teamsPerDrop,
-      maxContestedDrops: live.maxContestedDrops,
-      fortniteNick: access.access.fortniteNick,
-      steps: access.access.isStaff
-        ? []
-        : access.access.dropped
-          ? [
-              "Drop confirmado.",
-              "No Discord você já deve ver o canal de código e o getting-off.",
-            ]
-          : [
-              "Clique no retângulo do drop no mapa.",
-              "Confirme. Se o drop já tiver 1 time, o segundo vira disputa (quando ainda houver disputa livre no mapa).",
-              "Depois o Discord libera código e getting-off.",
-            ],
-    });
-  });
-
-  app.post("/api/public/scrims/:id/drop", async (req, res) => {
-    const client = getDiscordClient();
-    const scrim = getScrim(String(req.params.id));
-    if (!client?.isReady() || !scrim) {
-      res.status(404).json({ error: "Scrim não encontrada" });
-      return;
-    }
-    const live = ensureScrimHasDrops(scrim.id) ?? scrim;
-    const access = await resolveMapAccess(req, live);
-    if (!access.ok) {
-      res.status(access.status).json({ error: access.error, login: Boolean(access.login) });
-      return;
-    }
-    if (!access.access.canClaim) {
-      res.status(403).json({
-        error: live.dropsOpen
-          ? "Você não pode marcar drop."
-          : "A staff fechou a marcação de drops.",
-      });
-      return;
-    }
-    if (live.drops.length === 0) {
-      res.status(400).json({
-        error: "Este mapa ainda não tem drops. A staff precisa salvar o preset de mapa.",
-      });
-      return;
-    }
-    let dropId = String(req.body?.dropId ?? "");
-    if (!dropId && req.body?.x != null && req.body?.y != null) {
-      dropId = findDropAt(live.id, Number(req.body.x), Number(req.body.y))?.id ?? "";
-    }
-    if (!dropId) {
-      res.status(400).json({ error: "Clique dentro de um drop" });
-      return;
-    }
-    try {
-      const drop = await applyPlayerDrop(client, scrim.id, access.access.userId, dropId);
-      res.json({ drop });
-    } catch (error) {
-      fail(res, error, "Não foi possível marcar o drop");
-    }
   });
 
   if (process.env.VERCEL || options.serveUi === false) {

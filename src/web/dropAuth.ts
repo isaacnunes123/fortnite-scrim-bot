@@ -1,6 +1,6 @@
 import type { Request } from "express";
-import { getDiscordClient } from "../bot/client.js";
-import { getScrim, listInvites, addInvite, type Scrim } from "../scrims/store.js";
+import { addInvite, listInvites, type Scrim } from "../scrims/store.js";
+import { fetchGuildMember } from "./discordRest.js";
 
 export const DROP_COOKIE = "drop_player";
 
@@ -44,22 +44,24 @@ export async function resolveMapAccess(
   if (!userId) {
     return { ok: false, status: 401, error: "Entre com Discord para abrir o mapa.", login: true };
   }
-  const client = getDiscordClient();
-  if (!client?.isReady() || !scrim.discord) {
-    return {
-      ok: false,
-      status: 403,
-      error:
-        "Mapa indisponível agora. A marcação de drop precisa do bot Discord em um host 24/7.",
-    };
-  }
-  const guild = await client.guilds.fetch(scrim.guildId).catch(() => null);
-  const member = await guild?.members
-    .fetch({ user: userId, force: true })
-    .catch(() => null);
 
   let invite = listInvites(scrim.id).find((item) => item.discordUserId === userId) ?? null;
-  const roleIds = member ? [...member.roles.cache.keys()] : [];
+  if (invite) {
+    return {
+      ok: true,
+      access: {
+        userId,
+        teamName: invite.teamName,
+        fortniteNick: invite.fortniteNick || invite.displayName,
+        dropped: invite.dropped,
+        canClaim: Boolean(scrim.dropsOpen),
+        isStaff: false,
+      },
+    };
+  }
+
+  const member = await fetchGuildMember(userId, scrim.guildId);
+  const roleIds = member?.roles ?? [];
   const hasCheckinRole = Boolean(
     scrim.discord && roleIds.includes(scrim.discord.registeredRoleId),
   );
