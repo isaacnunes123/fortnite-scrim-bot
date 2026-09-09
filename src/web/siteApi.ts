@@ -153,6 +153,12 @@ export function setupExpress(app: Express): void {
     next();
   });
   app.use(express.json({ limit: "8mb" }));
+  app.use((req, _res, next) => {
+    const incoming = req as Request & { cookies?: unknown; secret?: string };
+    Reflect.deleteProperty(incoming, "cookies");
+    incoming.secret = env.sessionSecret;
+    next();
+  });
   app.use(cookieParser(env.sessionSecret));
   app.use(async (_req, res, next) => {
     try {
