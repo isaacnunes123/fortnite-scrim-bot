@@ -3,12 +3,19 @@ import { env } from "./env.js";
 import { createWebApp } from "./web/app.js";
 
 async function main() {
-  await startBot(env.discordToken);
   const app = await createWebApp();
-
-  app.listen(env.port, () => {
-    console.log(`[web] Painel em http://localhost:${env.port}`);
+  await new Promise<void>((resolve, reject) => {
+    const server = app.listen(env.port, "0.0.0.0", () => {
+      console.log(`[web] Painel em http://0.0.0.0:${env.port}`);
+      resolve();
+    });
+    server.on("error", reject);
   });
+  try {
+    await startBot(env.discordToken);
+  } catch (error) {
+    console.error("[bot] Falha ao iniciar o bot — API continua no ar:", error);
+  }
 }
 
 main().catch((error) => {

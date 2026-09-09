@@ -30,7 +30,7 @@
       "destination": "https://handsome-curiosity-production-48d3.up.railway.app/brand/:path*"
     },
     {
-      "source": "/((?!assets/|banners/).*)",
+      "source": "/((?!api(?:/|$)|assets/|banners/|uploads/|maps/|preset-files/|brand/).*)",
       "destination": "/index.html"
     }
   ]

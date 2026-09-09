@@ -1,12 +1,27 @@
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (init?.body != null && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   const response = await fetch(path, {
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init,
+    headers,
   });
-  const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+  const data = (await response.json().catch(() => ({}))) as T & {
+    error?: string;
+    message?: string;
+    code?: number;
+  };
   if (!response.ok) {
-    throw new Error(data.error || "Falha na requisição");
+    const railwayGone =
+      data.message === "Application not found" ||
+      (response.status === 404 && data.code === 404 && !data.error);
+    throw new Error(
+      railwayGone
+        ? "API offline. Gere o domínio público no Railway e aponte a Vercel para ele."
+        : data.error || data.message || "Falha na requisição",
+    );
   }
   return data;
 }

@@ -148,7 +148,7 @@ export async function createWebApp() {
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
   app.use((req, res, next) => {
-    const origin = String(req.headers.origin ?? "").trim();
+    const origin = String(req.headers.origin ?? "").trim().replace(/\/$/, "");
     if (origin && isAllowedPublicHost(origin)) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Access-Control-Allow-Credentials", "true");

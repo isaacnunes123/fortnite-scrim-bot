@@ -43,7 +43,7 @@ O `npm start` (`node dist/index.js`) é o processo Node. A Vercel **não** deve 
 
 ## Domínio próprio (Vercel + Railway)
 
-O frontend usa caminhos relativos (`/api/...`, `/tabelas`). A Vercel serve o HTML/JS e faz rewrite de `/api` para o Railway.
+O frontend usa caminhos relativos (`/api/...`, `/tabelas`). A Vercel serve o HTML/JS e encaminha `/api` para o Railway. O domínio público **precisa existir no Railway** (Settings → Networking → Generate Domain) — sem isso `/tabelas` mostra falha na requisição.
 
 1. Na Vercel → projeto → **Settings → Build & Development**:
    - Framework Preset: **Vite**
@@ -54,14 +54,15 @@ O frontend usa caminhos relativos (`/api/...`, `/tabelas`). A Vercel serve o HTM
    - A `@` → `76.76.21.21`
    - CNAME `www` → `cname.vercel-dns.com` (ou o que a Vercel mostrar)
 3. Na Vercel → **Domains**, o domínio `buildscrims.online` fica neste projeto. Não precisa (e não deve) apontar o domínio no Railway.
-4. Variáveis no **Railway** (o backend que executa OAuth e o bot):
+4. No Railway, gere um domínio `*.up.railway.app` e deixe o serviço Active. Se o hostname mudou, na Vercel → **Settings → Environment Variables**:
+   - `RAILWAY_API_ORIGIN=https://SEU-SERVICO.up.railway.app` (sem barra no final)
+5. Variáveis no **Railway** (o backend que executa OAuth e o bot):
    - `PUBLIC_BASE_URL=https://buildscrims.online`
    - opcional: `DISCORD_REDIRECT_URI=https://buildscrims.online/api/auth/discord/callback`
    - opcional: `PUBLIC_HOSTS=www.buildscrims.online,fortnite-scrim-bot.vercel.app`
-5. Discord Developer Portal → OAuth2 → Redirects, cadastre:
+6. Discord Developer Portal → OAuth2 → Redirects, cadastre:
    - `https://buildscrims.online/api/auth/discord/callback`
-   - mantenha também `https://handsome-curiosity-production-48d3.up.railway.app/api/auth/discord/callback` se ainda for usar o link Railway
-6. Confira `https://buildscrims.online/api/health` (proxy) e a homepage **BUILD CLOSED**, não um arquivo `.js`.
+7. Confira `https://buildscrims.online/api/health` — tem que voltar `"service":"fortnite-scrim-bot"`, não `"Application not found"`.
 
 Com Docker (só o backend Railway):
 
