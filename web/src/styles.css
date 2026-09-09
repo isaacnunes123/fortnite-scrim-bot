@@ -525,6 +525,24 @@ code {
   margin: 8px 0 28px;
 }
 
+.yunite-panel {
+  margin: 8px 0 28px;
+  padding: 18px 18px 12px;
+  border: 1px solid rgba(103, 232, 249, 0.38);
+  border-radius: 14px;
+  background: rgba(103, 232, 249, 0.07);
+}
+
+.yunite-panel h3 {
+  margin: 0 0 10px;
+  color: var(--cyan);
+}
+
+.yunite-panel .btn {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
 .invite-form .btn {
   margin-right: 8px;
   margin-bottom: 8px;

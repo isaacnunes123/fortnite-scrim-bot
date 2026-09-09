@@ -242,7 +242,7 @@ export function App() {
         </button>
         <div className="actions">
           <a className="btn secondary" href="/tabelas">
-            Tabelas
+            Tabelas públicas
           </a>
           <button className="btn secondary" type="button" onClick={() => setView({ page: "presets" })}>
             Presets
@@ -674,6 +674,10 @@ function Home({
         </div>
         <div className="card" style={{ marginTop: 16 }}>
           <h2 style={{ marginTop: 0 }}>Listas</h2>
+          <p className="muted">
+            Para colar o ID Yunite, abra a scrim nesta lista. O campo fica no topo da página da
+            scrim — não em Tabelas públicas.
+          </p>
           {scrims.length === 0 ? (
             <p className="muted">Nenhuma scrim ainda. Crie a primeira ao lado.</p>
           ) : (
@@ -912,6 +916,66 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
       {error ? <p className="error">{error}</p> : null}
       {notice ? <p className="ok-text">{notice}</p> : null}
 
+      <form
+        id="yunite-panel"
+        className="yunite-panel"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setError(null);
+          setNotice(null);
+          try {
+            await api(`/api/scrims/${id}/yunite`, {
+              method: "POST",
+              body: JSON.stringify({ yuniteTournamentId: yuniteId }),
+            });
+            setNotice("Torneio Yunite vinculado. A tabela pública já pode puxar a colocação.");
+            await load();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Não foi possível salvar o Yunite");
+          }
+        }}
+      >
+        <h3>Tabela Yunite</h3>
+        <label htmlFor="yuniteTournamentId">ID ou link do torneio Yunite</label>
+        <p className="muted">
+          Cole o UUID do torneio ou o link da tabela (<code>yunite.xyz/leaderboard</code>). Isso
+          vincula a colocação desta scrim. A chave da API fica só no servidor. Público:{" "}
+          <a href={`/tabelas/${id}`}>/tabelas/{id}</a>
+        </p>
+        {!yuniteConfigured ? (
+          <p className="muted">
+            Configure <code>YUNITE_API_KEY</code> no Railway para o site puxar a colocação.
+          </p>
+        ) : null}
+        {yuniteTournaments.length > 0 ? (
+          <>
+            <label htmlFor="yunitePick">Escolher torneio da API</label>
+            <select
+              id="yunitePick"
+              value={yuniteTournaments.some((item) => item.id === yuniteId) ? yuniteId : ""}
+              onChange={(event) => setYuniteId(event.target.value)}
+            >
+              <option value="">Selecionar…</option>
+              {yuniteTournaments.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : null}
+        <input
+          id="yuniteTournamentId"
+          value={yuniteId}
+          onChange={(event) => setYuniteId(event.target.value)}
+          placeholder="uuid do torneio ou https://yunite.xyz/leaderboard/…"
+          autoComplete="off"
+        />
+        <button className="btn" type="submit">
+          Salvar torneio Yunite
+        </button>
+      </form>
+
       <ActivityFeed logs={logs} full={logFull} onToggle={() => setLogFull((value) => !value)} />
 
       <form
@@ -1031,62 +1095,6 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           }}
         >
           {scrim.dropsOpen ? "Parar marcação de drops" : "Liberar marcação de drops"}
-        </button>
-      </form>
-
-      <form
-        className="invite-form"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          setError(null);
-          setNotice(null);
-          try {
-            await api(`/api/scrims/${id}/yunite`, {
-              method: "POST",
-              body: JSON.stringify({ yuniteTournamentId: yuniteId }),
-            });
-            setNotice("Torneio Yunite vinculado. A tabela pública já pode puxar a colocação.");
-            await load();
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Não foi possível salvar o Yunite");
-          }
-        }}
-      >
-        <label htmlFor="yuniteTournamentId">Torneio Yunite (tabela pública)</label>
-        <p className="muted">
-          Cole o ID do torneio ou o link da tabela no Yunite. A chave da API fica só no servidor.
-          Público: <a href={`/tabelas/${id}`}>/tabelas/{id}</a>
-        </p>
-        {!yuniteConfigured ? (
-          <p className="muted">
-            Configure <code>YUNITE_API_KEY</code> no Railway para o site puxar a colocação.
-          </p>
-        ) : null}
-        {yuniteTournaments.length > 0 ? (
-          <>
-            <label htmlFor="yunitePick">Escolher torneio da API</label>
-            <select
-              id="yunitePick"
-              value={yuniteTournaments.some((item) => item.id === yuniteId) ? yuniteId : ""}
-              onChange={(event) => setYuniteId(event.target.value)}
-            >
-              <option value="">Selecionar…</option>
-              {yuniteTournaments.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </>
-        ) : null}
-        <input
-          id="yuniteTournamentId"
-          value={yuniteId}
-          onChange={(event) => setYuniteId(event.target.value)}
-          placeholder="uuid do torneio ou https://yunite.xyz/leaderboard/…"
-        />
-        <button className="btn" type="submit">
-          Salvar torneio Yunite
         </button>
       </form>
 

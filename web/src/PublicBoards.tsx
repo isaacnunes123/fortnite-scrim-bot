@@ -135,7 +135,8 @@ function BoardList() {
         <p className="boards-kicker">Rankings ao vivo</p>
         <h1>Tabelas</h1>
         <p className="muted">
-          Colocação das scrims (Yunite) e o mapa de drop de cada lobby. Sem login.
+          Colocação das scrims (Yunite) e o mapa de drop de cada lobby. Sem login. A staff cola o
+          ID do torneio no painel da scrim, não aqui.
         </p>
       </div>
 
