@@ -5,11 +5,15 @@
   "outputDirectory": "dist/public",
   "installCommand": "npm install --include=dev",
   "functions": {
-    "api/[[...path]].ts": {
+    "api/index.ts": {
       "includeFiles": "presets/**"
     }
   },
   "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
     {
       "source": "/((?!api(?:/|$)|assets/|banners/|uploads/|maps/|preset-files/|brand/).*)",
       "destination": "/index.html"

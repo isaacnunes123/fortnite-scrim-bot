@@ -12,12 +12,28 @@ type VercelReq = IncomingMessage & {
   query?: { path?: string | string[] };
 };
 
+function headerValue(value: string | string[] | undefined): string {
+  return (Array.isArray(value) ? value[0] : value)?.trim() ?? "";
+}
+
 function withApiPrefix(req: VercelReq): void {
-  const raw = req.url ?? "/";
+  const forwarded = headerValue(req.headers["x-forwarded-uri"]);
+  const incoming = req.url ?? "/";
+  const incomingQuery = incoming.includes("?") ? incoming.slice(incoming.indexOf("?")) : "";
+  const raw =
+    forwarded.startsWith("/api")
+      ? forwarded.includes("?")
+        ? forwarded
+        : `${forwarded}${incomingQuery}`
+      : incoming;
   const qIndex = raw.indexOf("?");
-  const pathname = qIndex >= 0 ? raw.slice(0, qIndex) : raw;
-  const query = qIndex >= 0 ? raw.slice(qIndex) : "";
-  if (pathname === "/api" || pathname.startsWith("/api/")) {
+  let pathname = qIndex >= 0 ? raw.slice(0, qIndex) : raw;
+  const query = qIndex >= 0 ? raw.slice(qIndex) : incomingQuery;
+  if (pathname === "/api/index") {
+    pathname = "/api";
+  }
+  if (pathname !== "/api" && pathname.startsWith("/api/")) {
+    req.url = `${pathname}${query}`;
     return;
   }
   const parts = req.query?.path;
