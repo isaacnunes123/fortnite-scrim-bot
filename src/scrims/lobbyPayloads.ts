@@ -12,7 +12,7 @@ export type DiscordEmbedPayload = {
 
 export type DiscordButtonPayload = {
   type: 2;
-  style: 1 | 2 | 4 | 5;
+  style: 1 | 2 | 3 | 4 | 5;
   label: string;
   custom_id?: string;
   url?: string;

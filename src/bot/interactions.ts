@@ -8,6 +8,8 @@ import {
   type Client,
   type Interaction,
 } from "discord.js";
+import { env } from "../env.js";
+import { registerPlayer, resolveScrimFromButton } from "../scrims/checkin.js";
 import {
   refreshRegistrationMessage,
   revealFillChannel,
@@ -20,11 +22,13 @@ import {
   getActiveBan,
   getScrim,
   listInvites,
+  pullRemoteStore,
   remainingCheckinCooldown,
   removePlayer,
   teamCount,
+  type Scrim,
 } from "../scrims/store.js";
-import { canRegisterNow, isLeavePunishable, memberRoleIds } from "../scrims/time.js";
+import { isLeavePunishable, memberRoleIds } from "../scrims/time.js";
 
 function asMember(interaction: Interaction): GuildMember | null {
   if (interaction.member instanceof GuildMember) {
@@ -52,8 +56,29 @@ async function takeRoles(member: GuildMember, roleIds: string[]) {
   await member.roles.remove(roleIds).catch(() => undefined);
 }
 
+async function resolveButtonScrim(
+  interaction: ButtonInteraction,
+  scrimId: string,
+): Promise<Scrim | null> {
+  await pullRemoteStore();
+  const parentId =
+    interaction.channel && "parentId" in interaction.channel
+      ? interaction.channel.parentId
+      : null;
+  return resolveScrimFromButton(
+    scrimId,
+    interaction.guildId ?? undefined,
+    interaction.channelId,
+    parentId,
+  );
+}
+
 export async function handleInteraction(interaction: Interaction, client: Client) {
   if (interaction.isButton()) {
+    if (env.discordPublicKey) {
+      return;
+    }
+    await pullRemoteStore().catch(() => undefined);
     const [action, scrimId, extra] = interaction.customId.split(":");
     if (!scrimId) {
       return;
@@ -93,89 +118,41 @@ async function onRegisterButton(
   client: Client,
   scrimId: string,
 ) {
-  const scrim = getScrim(scrimId);
+  const scrim = await resolveButtonScrim(interaction, scrimId);
+  if (!scrim) {
+    return;
+  }
   const member = await resolveMember(interaction);
-  if (!scrim || !member) {
-    await interaction.reply({ content: "Scrim indisponível.", ephemeral: true });
+  const outcome = registerPlayer(
+    scrim,
+    member
+      ? { id: member.id, displayName: member.displayName, roleIds: memberRoleIds(member) }
+      : null,
+  );
+  if (!outcome.ok) {
+    await interaction.reply({ content: outcome.content, ephemeral: true });
     return;
   }
-  const ban = getActiveBan(member.id);
-  if (ban) {
-    const until = new Date(ban.expiresAt).toLocaleString("pt-BR", {
-      timeZone: "America/Sao_Paulo",
-    });
-    await interaction.reply({
-      content: `Você está na blacklist da closed até **${until}** (nick **${ban.fortniteNick}**). Check-in bloqueado.`,
-      ephemeral: true,
-    });
-    return;
-  }
-  const wait = remainingCheckinCooldown(member.id);
-  if (wait > 0) {
-    await interaction.reply({
-      content: `Você saiu há pouco. Espere **${wait}s** para fazer check-in de novo (evita saída sem querer).`,
-      ephemeral: true,
-    });
-    return;
-  }
-  const dropmapMention = scrim.discord ? `<#${scrim.discord.dropmapId}>` : "canal de drop map";
-  const chatMention = scrim.discord ? `<#${scrim.discord.chatId}>` : "chat";
-  const already = listInvites(scrim.id).find((invite) => invite.discordUserId === member.id);
-  if (already) {
-    await replyOnlyToPlayer(
-      interaction,
-      member,
-      `Você já está registrado.\nAbra ${dropmapMention} e marque o drop no mapa.\nChat: ${chatMention}.\nCódigo e getting-off só depois de marcar.`,
-      { dm: false },
-    );
-    return;
-  }
-  const gate = canRegisterNow(memberRoleIds(member), scrim);
-  if (!gate.ok) {
-    await interaction.reply({ content: gate.reason, ephemeral: true });
-    return;
-  }
-  if (teamCount(scrim.id) >= scrim.maxSlots) {
-    await interaction.reply({
-      content: "Lista cheia. Use o canal de segunda chance quando o staff liberar.",
-      ephemeral: true,
-    });
+  if (outcome.already) {
+    await replyOnlyToPlayer(interaction, member!, outcome.content, { dm: false });
     return;
   }
 
   try {
-    addInvite({
-      scrimId: scrim.id,
-      discordUserId: member.id,
-      displayName: member.displayName,
-      teamName: playerTeamName(scrim.id, member),
-      fortniteNick: member.displayName,
-    });
-    if (scrim.discord) {
-      await giveRole(member, scrim.discord.registeredRoleId);
-      const live = getScrim(scrim.id);
+    if (outcome.scrim.discord && member) {
+      await giveRole(member, outcome.scrim.discord.registeredRoleId);
+      const live = getScrim(outcome.scrim.id);
       if (live) {
         await syncLobbyAccess(client, live).catch(() => undefined);
       }
     }
-    await ensureDropMapEmbed(client, getScrim(scrim.id) ?? scrim);
-    await refreshRegistrationMessage(client, scrim.id);
-    const updated = getScrim(scrim.id);
+    await ensureDropMapEmbed(client, getScrim(outcome.scrim.id) ?? outcome.scrim);
+    await refreshRegistrationMessage(client, outcome.scrim.id);
+    const updated = getScrim(outcome.scrim.id);
     if (updated && teamCount(updated.id) >= updated.maxSlots) {
       await revealFillChannel(client, updated);
     }
-    await replyOnlyToPlayer(
-      interaction,
-      member,
-      [
-        `Check-in feito na **${scrim.name}**.`,
-        `Nick (Fortnite / apelido): **${member.displayName}**`,
-        "",
-        `Agora você vê ${chatMention} e ${dropmapMention}.`,
-        "Abra o **mesmo link** da embed do dropmap, entre com este Discord e **marque o drop**.",
-        "Canais de **código** e **getting-off** só liberam depois do drop no mapa.",
-      ].join("\n"),
-    );
+    await replyOnlyToPlayer(interaction, member!, outcome.content);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível registrar";
     await interaction.reply({ content: message, ephemeral: true });
@@ -188,11 +165,15 @@ async function replyOnlyToPlayer(
   content: string,
   options?: { dm?: boolean },
 ) {
-  await interaction.reply({
-    content,
-    ephemeral: true,
-    allowedMentions: { parse: [] },
-  });
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ content });
+  } else {
+    await interaction.reply({
+      content,
+      ephemeral: true,
+      allowedMentions: { parse: [] },
+    });
+  }
   if (options?.dm === false) {
     return;
   }
@@ -208,25 +189,17 @@ async function replyOnlyToPlayer(
     .catch(() => undefined);
 }
 
-function playerTeamName(scrimId: string, member: GuildMember): string {
-  const base = (member.displayName || member.user.username).slice(0, 32);
-  const taken = listInvites(scrimId).some(
-    (invite) => invite.teamName === base && invite.discordUserId !== member.id,
-  );
-  if (!taken) {
-    return base;
-  }
-  return `${base.slice(0, 27)}-${member.id.slice(-4)}`;
-}
-
 async function onLeave(
   interaction: ButtonInteraction,
   client: Client,
   scrimId: string,
 ) {
-  const scrim = getScrim(scrimId);
+  const scrim = await resolveButtonScrim(interaction, scrimId);
+  if (!scrim) {
+    return;
+  }
   const member = await resolveMember(interaction);
-  if (!scrim || !member) {
+  if (!member) {
     await interaction.reply({ content: "Scrim indisponível.", ephemeral: true });
     return;
   }
@@ -273,9 +246,12 @@ async function completeLeave(
   scrimId: string,
   punish: boolean,
 ) {
-  const scrim = getScrim(scrimId);
+  const scrim = await resolveButtonScrim(interaction, scrimId);
+  if (!scrim) {
+    return;
+  }
   const member = await resolveMember(interaction);
-  if (!scrim || !member) {
+  if (!member) {
     await replyLeave(interaction, "Scrim indisponível.");
     return;
   }
@@ -338,9 +314,12 @@ async function onFillRequest(
   client: Client,
   scrimId: string,
 ) {
-  const scrim = getScrim(scrimId);
+  const scrim = await resolveButtonScrim(interaction, scrimId);
+  if (!scrim?.discord) {
+    return;
+  }
   const member = await resolveMember(interaction);
-  if (!scrim?.discord || !member) {
+  if (!member) {
     await interaction.reply({ content: "Scrim indisponível.", ephemeral: true });
     return;
   }
@@ -406,9 +385,8 @@ async function onFillDecision(
   userId: string,
   accept: boolean,
 ) {
-  const scrim = getScrim(scrimId);
+  const scrim = await resolveButtonScrim(interaction, scrimId);
   if (!scrim?.discord) {
-    await interaction.reply({ content: "Scrim indisponível.", ephemeral: true });
     return;
   }
   if (!accept) {

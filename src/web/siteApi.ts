@@ -17,6 +17,7 @@ import {
   deleteTemplate,
   deleteScrim,
   deleteScrimPreset,
+  findScrimForChannel,
   getScrim,
   getTable,
   getTemplate,
@@ -60,6 +61,7 @@ import {
   requireAuth,
 } from "./staffAuth.js";
 import { DiscordRestError, fetchGuildRoles } from "./discordRest.js";
+import { handleDiscordHttpInteraction } from "./discordInteractions.js";
 import { readFreshBotHeartbeat } from "../bot/heartbeat.js";
 
 export type BotPresence = "online" | "offline" | "unknown";
@@ -279,10 +281,13 @@ async function resolveBotStatus(local?: BotStatusPayload): Promise<BotStatusPayl
 }
 
 const RAILWAY_DOWN_ERROR =
-  "O processo do bot no Railway não está no ar. Check-in ao vivo e slash commands precisam do gateway. Criar a categoria no Discord usa a API REST na Vercel (DISCORD_TOKEN + Gerenciar Canais/Cargos).";
+  "O processo do bot no Railway não está no ar. Slash commands precisam do gateway. Check-in (Registrar) e criar a categoria usam a API REST na Vercel (Interactions Endpoint URL + DISCORD_TOKEN).";
 
 function isVercelDiscordRestPath(req: Request): boolean {
   const path = String(req.path || req.url || "").split("?")[0] ?? "";
+  if (/^\/api\/discord\/interactions\/?$/.test(path)) {
+    return true;
+  }
   if (req.method === "POST" && /^\/api\/scrims\/?$/.test(path)) {
     return true;
   }
@@ -474,7 +479,17 @@ export function setupExpress(app: Express): void {
     }
     next();
   });
-  app.use(express.json({ limit: "8mb" }));
+  app.use(
+    express.json({
+      limit: "8mb",
+      verify: (req, _res, buf) => {
+        const url = String(req.url ?? "");
+        if (url.includes("/api/discord/interactions")) {
+          (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+        }
+      },
+    }),
+  );
   app.use((req, _res, next) => {
     const incoming = req as Request & { body?: unknown };
     if (typeof incoming.body === "string" && incoming.body.trim().startsWith("{")) {
@@ -536,6 +551,8 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
       discordRedirectUri: discordRedirectUri(),
       botProcessUrlConfigured: Boolean(env.botProcessUrl),
       heartbeatStore: usesRemoteStore(),
+      discordPublicKeyConfigured: Boolean(env.discordPublicKey),
+      discordInteractionsUrl: `${publicBaseUrl()}/api/discord/interactions`,
       bot: {
         ready: bot.ready,
         presence: bot.presence,
@@ -544,6 +561,51 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
         note: bot.note ?? null,
       },
     });
+  });
+
+  app.get("/api/internal/scrims/:id", async (req, res) => {
+    const auth = String(req.headers.authorization ?? "");
+    if (auth !== `Bearer ${env.sessionSecret}`) {
+      res.status(401).json({ error: "Não autorizado" });
+      return;
+    }
+    await pullRemoteStore();
+    const id = String(req.params.id);
+    const channelId = String(req.query.channelId ?? "").trim();
+    const parentId = String(req.query.parentId ?? "").trim() || null;
+    let scrim = getScrim(id);
+    if (!scrim && channelId) {
+      scrim = findScrimForChannel(env.discordGuildId, channelId, parentId);
+    }
+    if (!scrim) {
+      res.status(404).json({ error: "Scrim não encontrada" });
+      return;
+    }
+    res.json({ scrim });
+  });
+
+  app.get("/api/discord/interactions", (_req, res) => {
+    res.json({
+      ok: true,
+      service: "discord-interactions",
+      hint: "Discord envia POST aqui. No Developer Portal → General Information, cole Interactions Endpoint URL e DISCORD_PUBLIC_KEY (Public Key).",
+      endpointUrl: `${publicBaseUrl()}/api/discord/interactions`,
+      publicKeyConfigured: Boolean(env.discordPublicKey),
+    });
+  });
+
+  app.post("/api/discord/interactions", async (req, res) => {
+    const incoming = req as Request & { rawBody?: Buffer };
+    const raw =
+      incoming.rawBody ??
+      (Buffer.isBuffer(req.body) ? req.body : null) ??
+      (typeof req.body === "string" ? Buffer.from(req.body) : null);
+    if (!raw) {
+      res.status(401).json({ error: "invalid request signature" });
+      return;
+    }
+    const result = await handleDiscordHttpInteraction(req.headers, raw);
+    res.status(result.status).json(result.body);
   });
 
   app.get("/api/auth/me", async (req, res) => {

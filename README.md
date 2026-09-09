@@ -17,6 +17,7 @@ copy .env.example .env
 2. Crie uma aplicação em [Discord Developer Portal](https://discord.com/developers/applications):
    - **Bot** → copie o token para `DISCORD_TOKEN`
    - **General Information** → copie o Application ID para `DISCORD_CLIENT_ID`
+   - **General Information** → copie a **Public Key** para `DISCORD_PUBLIC_KEY`
    - Em **OAuth2 → URL Generator**, marque `bot` e a permissão de entrar no servidor, depois convide o bot
 
 3. Preencha `ADMIN_ROLE_IDS` (IDs dos cargos Discord da staff) e `SESSION_SECRET` no `.env`
@@ -57,6 +58,7 @@ Não coloque o site de volta no Railway. O domínio público fica na Vercel.
 3. Variáveis no **host do bot** (as mesmas do `.env`):
    - `DISCORD_TOKEN` (obrigatório)
    - `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`
+   - `DISCORD_PUBLIC_KEY` (a mesma da Vercel — o gateway ignora os botões quando esta chave existe)
    - `SESSION_SECRET` (o mesmo da Vercel, se for encaminhar o painel)
    - `DATABASE_URL` (o mesmo Neon da Vercel — senão check-in e tabelas não compartilham dados)
    - `ADMIN_ROLE_IDS`, `YUNITE_API_KEY`, `PUBLIC_BASE_URL=https://buildscrims.online`
@@ -110,12 +112,19 @@ O frontend usa caminhos relativos (`/api/...`, `/tabelas`). A Vercel serve o HTM
    - `PUBLIC_BASE_URL=https://buildscrims.online`
    - `SESSION_SECRET`, `ADMIN_ROLE_IDS`
    - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_TOKEN`, `DISCORD_GUILD_ID`
+   - `DISCORD_PUBLIC_KEY` (General Information → Public Key — sem isso o botão **Registrar** não funciona)
    - `YUNITE_API_KEY`
    - `DATABASE_URL` (Neon — veja abaixo)
    - `BOT_PROCESS_URL` (URL pública do Railway, sem barra no final — sem isso o painel não marca “online”)
 5. Discord Developer Portal → OAuth2 → Redirects, cadastre:
    - `https://buildscrims.online/api/auth/discord/callback`
-6. Confira `https://buildscrims.online/api/health` — tem que voltar `"service":"fortnite-scrim-bot"` e `"host":"vercel"`.
+6. Discord Developer Portal → **General Information** → **Interactions Endpoint URL**:
+   - `https://buildscrims.online/api/discord/interactions`
+   - O Discord manda um PING. Só salva se `DISCORD_PUBLIC_KEY` na Vercel for a Public Key certa.
+   - Confira `https://buildscrims.online/api/discord/interactions` — tem que mostrar `"publicKeyConfigured":true`
+7. Confira `https://buildscrims.online/api/health` — tem que voltar `"service":"fortnite-scrim-bot"` e `"host":"vercel"`.
+
+O botão **Registrar** do check-in vai para essa URL HTTP (Vercel + Neon). **Não depende do Railway/gateway.** Coloque `DISCORD_PUBLIC_KEY` também no Railway para o gateway não responder o mesmo clique.
 
 ### Neon (gratuito) para as tabelas
 

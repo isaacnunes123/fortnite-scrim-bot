@@ -5,6 +5,8 @@ export const env = {
   discordToken: process.env.DISCORD_TOKEN?.trim() ?? "",
   discordClientId: process.env.DISCORD_CLIENT_ID?.trim() ?? "",
   discordClientSecret: process.env.DISCORD_CLIENT_SECRET?.trim() ?? "",
+  /** General Information → Public Key. Obrigatório na Vercel para POST /api/discord/interactions. */
+  discordPublicKey: process.env.DISCORD_PUBLIC_KEY?.trim() ?? "",
   discordGuildId: process.env.DISCORD_GUILD_ID?.trim() || "862771292389900308",
   adminRoleIds: parseIdList(process.env.ADMIN_ROLE_IDS),
   sessionSecret: process.env.SESSION_SECRET?.trim() || "dev-session-secret",
@@ -15,7 +17,7 @@ export const env = {
     (process.env.PUBLIC_BASE_URL ?? "").startsWith("https://") ||
     (process.env.DISCORD_REDIRECT_URI ?? "").startsWith("https://"),
   yuniteApiKey: process.env.YUNITE_API_KEY?.trim() ?? "",
-  /** Host Node 24/7 do gateway (check-in ao vivo). Criar categoria/canais é REST na Vercel. */
+  /** Host Node 24/7 do gateway (slash commands). Check-in vai para /api/discord/interactions na Vercel. */
   botProcessUrl: (process.env.BOT_PROCESS_URL ?? "").trim().replace(/\/$/, ""),
 };
 

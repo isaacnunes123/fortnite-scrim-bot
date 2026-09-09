@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createSiteApp, flushStore } from "../src/web/siteApi.js";
+import { handleDiscordHttpInteraction } from "../src/web/discordInteractions.js";
 import { ensureStore } from "../src/scrims/store.js";
 
 export const config = {
@@ -45,8 +46,45 @@ function withApiPrefix(req: VercelReq): void {
   }
 }
 
+function readRawBody(req: IncomingMessage): Promise<Buffer> {
+  const already = (req as IncomingMessage & { body?: unknown }).body;
+  if (Buffer.isBuffer(already)) {
+    return Promise.resolve(already);
+  }
+  if (typeof already === "string") {
+    return Promise.resolve(Buffer.from(already));
+  }
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+function requestPath(req: VercelReq): string {
+  return (req.url ?? "/").split("?")[0] || "/";
+}
+
 export default async function handler(req: VercelReq, res: ServerResponse): Promise<void> {
   withApiPrefix(req);
+  if (requestPath(req) === "/api/discord/interactions" && req.method === "POST") {
+    const raw = await readRawBody(req);
+    await ensureStore();
+    const result = await handleDiscordHttpInteraction(req.headers, raw);
+    const payload = JSON.stringify(result.body);
+    res.writeHead(result.status, {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": Buffer.byteLength(payload),
+    });
+    res.end(payload);
+    await flushStore().catch((error) => {
+      console.error("[api] flushStore:", error);
+    });
+    return;
+  }
   await ensureStore();
   await new Promise<void>((resolve) => {
     const done = () => resolve();
