@@ -25,7 +25,7 @@ import {
   type EmbedCopy,
   type Scrim,
 } from "./store.js";
-import { clockMinutes, parseClock } from "./time.js";
+import { clockMinutes, formatLeaveUntil, formatWindowWhen, parseBrasiliaDateTime, parseClock } from "./time.js";
 
 
 function everyoneDeny(guild: Guild): OverwriteResolvable {
@@ -70,7 +70,7 @@ function scrimVars(scrim: Scrim, extra: Record<string, string> = {}): Record<str
     max: String(scrim.maxSlots),
     windows: extra.windows ?? "",
     url: dropMapUrl(scrim.id),
-    leaveUntil: scrim.leaveUntil || "não definido",
+    leaveUntil: formatLeaveUntil(scrim.leaveUntil) || "ainda não definido",
     punishHours: String(scrim.punishHours),
     code: scrim.matchCode || "—",
     ...extra,
@@ -91,11 +91,12 @@ function embedFrom(copy: EmbedCopy, vars: Record<string, string>, fallbackColor:
 
 export function registrationEmbed(scrim: Scrim, guild: Guild) {
   const lines = scrim.windows.map((window) => {
+    const when = formatWindowWhen(window);
     if (!window.roleId) {
-      return `Quem **não** tem os cargos de prioridade registra às \`${window.time}\``;
+      return `Quem **não** tem cargo de prioridade faz check-in em **${when}**`;
     }
     const role = guild.roles.cache.get(window.roleId);
-    return `${role ?? `<@&${window.roleId}>`} registra às \`${window.time}\``;
+    return `${role ?? `<@&${window.roleId}>`} faz check-in em **${when}**`;
   });
   return embedFrom(scrim.embeds.registration, scrimVars(scrim, { windows: lines.join("\n") }), 0x3ee0a2);
 }
@@ -553,10 +554,12 @@ export function schedulePriorityPings(client: Client, scrim: Scrim): void {
     }
   }
   const timers: NodeJS.Timeout[] = [];
-  const now = clockMinutes();
   for (const window of scrim.windows) {
-    const target = parseClock(window.time);
-    const delayMin = target - now;
+    const at =
+      window.date && window.time
+        ? parseBrasiliaDateTime(window.date, window.time)
+        : Date.now() + (parseClock(window.time) - clockMinutes()) * 60_000;
+    const delay = at - Date.now();
     const run = async () => {
       const live = getScrim(scrim.id);
       if (!live?.discord) {
@@ -567,14 +570,12 @@ export function schedulePriorityPings(client: Client, scrim: Scrim): void {
         return;
       }
       const who = window.roleId
-        ? `<@&${window.roleId}> vocês já podem registrar`
-        : "Quem não tem cargo de prioridade já pode registrar";
+        ? `<@&${window.roleId}> o check-in de vocês já está aberto`
+        : "Quem não tem cargo de prioridade já pode fazer check-in";
       await (channel as TextChannel).send(who);
     };
-    if (delayMin <= 0) {
-      void run();
-    } else {
-      timers.push(setTimeout(() => void run(), delayMin * 60_000));
+    if (delay > 0 && delay < 48 * 60 * 60 * 1000) {
+      timers.push(setTimeout(() => void run(), delay));
     }
   }
   pingTimers.set(scrim.id, timers);

@@ -62,17 +62,35 @@ export type DropSpot = {
   claimedByAvatarUrl?: string | null;
 };
 
+export type PriorityWindow = {
+  roleId: string;
+  time: string;
+  date?: string;
+};
+
 export type MapTemplate = {
   id: string;
   name: string;
   mapImageUrl: string;
   drops: DropSpot[];
   createdAt: string;
+  maxContestedDrops?: number;
 };
 
-export type PriorityWindow = {
-  roleId: string;
-  time: string;
+export type ScrimPreset = {
+  id: string;
+  name: string;
+  createdAt: string;
+  mode: "solo" | "duo" | "trio" | "squad";
+  maxSlots: number;
+  teamsPerDrop: number;
+  maxContestedDrops: number;
+  templateId: string;
+  accessRoleIds: string[];
+  staffRoleIds: string[];
+  windows: PriorityWindow[];
+  leaveUntil: string;
+  punishHours: number;
 };
 
 export type DiscordGuild = {
@@ -176,6 +194,7 @@ export type ScrimDetail = {
   templateName?: string;
   dropsOpen?: boolean;
   teamsPerDrop?: number;
+  maxContestedDrops?: number;
   embeds?: ScrimEmbeds;
   discord: { lobbyNumber: number; fillChatOpen: boolean } | null;
 };

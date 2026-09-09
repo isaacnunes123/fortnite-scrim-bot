@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { centroidOf, pointInPolygon, type Vertex } from "./geometry.js";
 import { publish } from "./live.js";
+import { readJsonFile, repoPresetsDir, tryWriteJsonFile } from "./preset-files.js";
 
 export const MODE_SIZE = {
   solo: 1,
@@ -16,6 +17,7 @@ export type ScrimMode = keyof typeof MODE_SIZE;
 export type PriorityWindow = {
   roleId: string;
   time: string;
+  date: string;
 };
 
 export type DropKind = "poi" | "contested" | "locked";
@@ -110,6 +112,7 @@ export type Scrim = {
   templateName: string;
   dropsOpen: boolean;
   teamsPerDrop: number;
+  maxContestedDrops: number;
   embeds: ScrimEmbeds;
 };
 
@@ -119,6 +122,23 @@ export type MapTemplate = {
   mapImageUrl: string;
   drops: DropSpot[];
   createdAt: string;
+  maxContestedDrops: number;
+};
+
+export type ScrimPreset = {
+  id: string;
+  name: string;
+  createdAt: string;
+  mode: ScrimMode;
+  maxSlots: number;
+  teamsPerDrop: number;
+  maxContestedDrops: number;
+  templateId: string;
+  accessRoleIds: string[];
+  staffRoleIds: string[];
+  windows: PriorityWindow[];
+  leaveUntil: string;
+  punishHours: number;
 };
 
 export type Invite = {
@@ -149,6 +169,7 @@ type StoreFile = {
   scrims: Scrim[];
   invites: Invite[];
   templates: MapTemplate[];
+  scrimPresets: ScrimPreset[];
   blacklist: BlacklistEntry[];
   logs: ActivityLog[];
 };
@@ -177,13 +198,21 @@ function defaultTemplates(): MapTemplate[] {
       name: "Ilha atual",
       mapImageUrl: "/maps/island.png",
       drops: [],
-      createdAt: new Date().toISOString(),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      maxContestedDrops: 14,
     },
   ];
 }
 
 function emptyStore(): StoreFile {
-  return { scrims: [], invites: [], templates: defaultTemplates(), blacklist: [], logs: [] };
+  return {
+    scrims: [],
+    invites: [],
+    templates: defaultTemplates(),
+    scrimPresets: [],
+    blacklist: [],
+    logs: [],
+  };
 }
 
 export function defaultEmbeds(): ScrimEmbeds {
@@ -193,28 +222,28 @@ export function defaultEmbeds(): ScrimEmbeds {
       color: "#3ee0a2",
       footer: "{name}",
       description:
-        "{windows}\n\n**{teams}/{max}** times na lista.\n\nClique em **Registrar** (só você vê a confirmação).\nDepois do check-in você libera **chat** + **dropmap**.\nCódigo da partida e getting-off só depois de **marcar o drop** no mapa.",
+        "{windows}\n\n**{teams}/{max}** times já na lista.\n\n1. Clique em **Registrar**.\n2. Só você vê se deu certo.\n3. Depois disso o Discord libera o **chat** e o **mapa de drop**.\n4. Código da partida e getting-off só depois de **marcar o drop** no mapa.",
     },
     dropmapOpen: {
       title: "Marque seu drop no mapa",
       color: "#3b82f6",
       footer: "{name}",
       description:
-        "Depois do check-in, este é o **único** passo obrigatório.\n\n1. Clique em **Abrir mapa** e entre com o **mesmo Discord**.\n2. Clique no drop e **confirme**.\n3. Só depois disso o Discord libera **código** e **getting-off**.\n\nO mapa atualiza ao vivo. Você pode trocar o drop até a staff fechar.",
+        "Depois do check-in, falta **só marcar o drop**.\n\n1. Clique em **Abrir mapa** e entre com o **mesmo Discord** do servidor.\n2. Clique no drop e **confirme**.\n3. Pronto: o Discord libera **código** e **getting-off**.\n\nO mapa atualiza sozinho. Você pode trocar de drop até a staff fechar a marcação.",
     },
     dropmapClosed: {
       title: "Marcação fechada",
       color: "#111111",
       footer: "{name}",
       description:
-        "A staff **fechou** a marcação. Quem já marcou continua vendo o mapa ao vivo. Canais de código e getting-off só para quem já confirmou o drop.",
+        "A staff **fechou** a marcação. Quem já marcou continua vendo o mapa ao vivo. Código e getting-off só para quem já confirmou o drop.",
     },
     leave: {
       title: "Sair da scrim",
       color: "#ff5c5c",
       footer: "{name}",
       description:
-        "Saída livre até **{leaveUntil}** (horário de Brasília).\nDepois disso, confirmar a saída gera **ban da closed**. Punição: **{punishHours}h**.",
+        "Saída livre até **{leaveUntil}** (horário de Brasília).\nSe você confirmar a saída **depois** desse horário, entra na **blacklist da closed** por **{punishHours}h** e não faz check-in até acabar a punição.",
     },
     code: {
       title: "Código da partida",
@@ -293,6 +322,29 @@ function applyClaims(drop: DropSpot, claims: DropClaim[]): DropSpot {
   return drop;
 }
 
+export function clampMaxContestedDrops(value: unknown): number {
+  if (value == null || value === "") {
+    return 999;
+  }
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0) {
+    return 0;
+  }
+  return Math.min(200, n);
+}
+
+export function contestedDropCount(drops: DropSpot[]): number {
+  return drops.filter((drop) => listDropClaims(drop).length >= 2).length;
+}
+
+export function normalizeWindow(raw: Partial<PriorityWindow> | null | undefined): PriorityWindow {
+  return {
+    roleId: String(raw?.roleId ?? "").trim(),
+    time: String(raw?.time ?? "").trim().slice(0, 5),
+    date: String(raw?.date ?? "").trim().slice(0, 10),
+  };
+}
+
 export function clampTeamsPerDrop(value: unknown): number {
   const n = Number(value);
   if (!Number.isInteger(n) || n < 1) {
@@ -333,7 +385,7 @@ function normalizeScrim(raw: Scrim): Scrim {
     ...raw,
     accessRoleIds: raw.accessRoleIds ?? [],
     staffRoleIds: raw.staffRoleIds ?? [],
-    windows: raw.windows ?? [],
+    windows: (raw.windows ?? []).map(normalizeWindow),
     leaveUntil: raw.leaveUntil ?? "",
     punishHours: raw.punishHours ?? 24,
     guildId: raw.guildId ?? "",
@@ -352,6 +404,7 @@ function normalizeScrim(raw: Scrim): Scrim {
     templateName: raw.templateName ?? "",
     dropsOpen: raw.dropsOpen !== false,
     teamsPerDrop: clampTeamsPerDrop(raw.teamsPerDrop),
+    maxContestedDrops: clampMaxContestedDrops(raw.maxContestedDrops),
     embeds: normalizeEmbeds(raw.embeds),
   };
 }
@@ -372,13 +425,94 @@ function normalizeTemplate(raw: MapTemplate): MapTemplate {
       }),
     ),
     createdAt: raw.createdAt || new Date().toISOString(),
+    maxContestedDrops: clampMaxContestedDrops(
+      (raw as MapTemplate).maxContestedDrops == null ? 14 : raw.maxContestedDrops,
+    ),
   };
+}
+
+function normalizeScrimPreset(raw: Partial<ScrimPreset>): ScrimPreset {
+  return {
+    id: raw.id || randomUUID(),
+    name: String(raw.name ?? "Preset de scrim").trim() || "Preset de scrim",
+    createdAt: raw.createdAt || new Date().toISOString(),
+    mode: isScrimMode(String(raw.mode ?? "")) ? (raw.mode as ScrimMode) : "trio",
+    maxSlots: Number.isInteger(raw.maxSlots) && (raw.maxSlots ?? 0) > 0 ? Number(raw.maxSlots) : 20,
+    teamsPerDrop: clampTeamsPerDrop(raw.teamsPerDrop),
+    maxContestedDrops: clampMaxContestedDrops(raw.maxContestedDrops),
+    templateId: String(raw.templateId ?? ""),
+    accessRoleIds: Array.isArray(raw.accessRoleIds) ? raw.accessRoleIds.map(String) : [],
+    staffRoleIds: Array.isArray(raw.staffRoleIds) ? raw.staffRoleIds.map(String) : [],
+    windows: (raw.windows ?? []).map(normalizeWindow),
+    leaveUntil: String(raw.leaveUntil ?? ""),
+    punishHours: Number.isInteger(raw.punishHours) ? Number(raw.punishHours) : 24,
+  };
+}
+
+function mergeLast<T extends { id: string }>(lists: T[][]): T[] {
+  const byId = new Map<string, T>();
+  for (const list of lists) {
+    for (const item of list) {
+      byId.set(item.id, item);
+    }
+  }
+  return [...byId.values()];
+}
+
+function mergeTemplates(lists: MapTemplate[][]): MapTemplate[] {
+  const byId = new Map<string, MapTemplate>();
+  for (const list of lists) {
+    for (const item of list) {
+      const next = normalizeTemplate(item);
+      const current = byId.get(next.id);
+      if (!current || next.drops.length >= current.drops.length) {
+        byId.set(next.id, next);
+      }
+    }
+  }
+  return [...byId.values()];
+}
+
+function mapPresetsPath(base: string): string {
+  return path.join(base, "map-presets.json");
+}
+
+function scrimPresetsPath(base: string): string {
+  return path.join(base, "scrim-presets.json");
 }
 
 function readDisk(): StoreFile {
   try {
     const raw = fs.readFileSync(storeFilePath(), "utf-8");
     const parsed = JSON.parse(raw) as StoreFile;
+    const storeTemplates = Array.isArray(parsed.templates)
+      ? parsed.templates.map(normalizeTemplate)
+      : [];
+    const repoTemplates = readJsonFile<MapTemplate[]>(
+      mapPresetsPath(repoPresetsDir()),
+      [],
+    ).map(normalizeTemplate);
+    const dataTemplates = readJsonFile<MapTemplate[]>(
+      mapPresetsPath(dataDir()),
+      [],
+    ).map(normalizeTemplate);
+    const templates = mergeTemplates([
+      defaultTemplates(),
+      repoTemplates,
+      dataTemplates,
+      storeTemplates,
+    ]);
+    const storeScrimPresets = Array.isArray(parsed.scrimPresets)
+      ? parsed.scrimPresets.map(normalizeScrimPreset)
+      : [];
+    const repoScrimPresets = readJsonFile<ScrimPreset[]>(
+      scrimPresetsPath(repoPresetsDir()),
+      [],
+    ).map(normalizeScrimPreset);
+    const dataScrimPresets = readJsonFile<ScrimPreset[]>(
+      scrimPresetsPath(dataDir()),
+      [],
+    ).map(normalizeScrimPreset);
     return {
       scrims: (parsed.scrims ?? []).map(normalizeScrim),
       invites: (parsed.invites ?? []).map((invite) => ({
@@ -388,15 +522,24 @@ function readDisk(): StoreFile {
         droppedAt: invite.droppedAt ?? null,
         dropName: invite.dropName ?? null,
       })),
-      templates:
-        Array.isArray(parsed.templates) && parsed.templates.length > 0
-          ? parsed.templates.map(normalizeTemplate)
-          : defaultTemplates(),
+      templates: templates.length > 0 ? templates : defaultTemplates(),
+      scrimPresets: mergeLast([repoScrimPresets, dataScrimPresets, storeScrimPresets]),
       blacklist: parsed.blacklist ?? [],
       logs: parsed.logs ?? [],
     };
   } catch {
-    return emptyStore();
+    const repoTemplates = readJsonFile<MapTemplate[]>(mapPresetsPath(repoPresetsDir()), []).map(
+      normalizeTemplate,
+    );
+    const repoScrimPresets = readJsonFile<ScrimPreset[]>(
+      scrimPresetsPath(repoPresetsDir()),
+      [],
+    ).map(normalizeScrimPreset);
+    return {
+      ...emptyStore(),
+      templates: repoTemplates.length > 0 ? repoTemplates : defaultTemplates(),
+      scrimPresets: repoScrimPresets,
+    };
   }
 }
 
@@ -414,6 +557,10 @@ function persist(): void {
   const tmp = `${filePath}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(store, null, 2));
   fs.renameSync(tmp, filePath);
+  tryWriteJsonFile(mapPresetsPath(dataDir()), store.templates);
+  tryWriteJsonFile(scrimPresetsPath(dataDir()), store.scrimPresets);
+  tryWriteJsonFile(mapPresetsPath(repoPresetsDir()), store.templates);
+  tryWriteJsonFile(scrimPresetsPath(repoPresetsDir()), store.scrimPresets);
   publish({ type: "store" });
 }
 
@@ -473,6 +620,7 @@ export function createTemplate(name: string, mapImageUrl = "/maps/island.png"): 
     mapImageUrl: mapImageUrl || "/maps/island.png",
     drops: [],
     createdAt: new Date().toISOString(),
+    maxContestedDrops: 14,
   };
   store.templates.push(template);
   persist();
@@ -541,6 +689,40 @@ export function deleteTemplate(id: string): boolean {
   }
   if (store.templates.length === 0) {
     store.templates = defaultTemplates();
+  }
+  persist();
+  return true;
+}
+
+export function listScrimPresets(): ScrimPreset[] {
+  return getStore()
+    .scrimPresets.slice()
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+}
+
+export function saveScrimPreset(input: Partial<ScrimPreset> & { name: string }): ScrimPreset {
+  const store = getStore();
+  const next = normalizeScrimPreset({
+    ...input,
+    id: input.id || randomUUID(),
+    createdAt: input.createdAt || new Date().toISOString(),
+  });
+  const index = store.scrimPresets.findIndex((item) => item.id === next.id);
+  if (index >= 0) {
+    store.scrimPresets[index] = next;
+  } else {
+    store.scrimPresets.push(next);
+  }
+  persist();
+  return next;
+}
+
+export function deleteScrimPreset(id: string): boolean {
+  const store = getStore();
+  const before = store.scrimPresets.length;
+  store.scrimPresets = store.scrimPresets.filter((item) => item.id !== id);
+  if (store.scrimPresets.length === before) {
+    return false;
   }
   persist();
   return true;
@@ -641,6 +823,7 @@ export function createScrim(input: {
   guildName: string;
   templateId: string;
   teamsPerDrop?: number;
+  maxContestedDrops?: number;
 }): Scrim {
   const template = getTemplate(input.templateId);
   if (!template) {
@@ -668,6 +851,9 @@ export function createScrim(input: {
     templateName: template.name,
     dropsOpen: true,
     teamsPerDrop: clampTeamsPerDrop(input.teamsPerDrop),
+    maxContestedDrops: clampMaxContestedDrops(
+      input.maxContestedDrops ?? template.maxContestedDrops,
+    ),
     embeds: defaultEmbeds(),
   };
   store.scrims.push(scrim);
@@ -879,10 +1065,19 @@ export function claimDrop(
     ]),
   );
   const occupying = nextById.get(drop.id) ?? [];
+  const contestCap = clampMaxContestedDrops(scrim.maxContestedDrops);
   if (occupying.length >= limit) {
     throw new Error(
-      `Este drop já tem o limite de ${limit} time(s). Não dá para entrar em ${drop.name}.`,
+      `Este drop já está no limite (${limit} time${limit === 1 ? "" : "s"}). Escolha outro drop.`,
     );
+  }
+  if (occupying.length >= 1 && limit > 1 && contestCap < 999) {
+    const contestsNow = [...nextById.values()].filter((claims) => claims.length >= 2).length;
+    if (occupying.length === 1 && contestsNow >= contestCap) {
+      throw new Error(
+        `O mapa já tem ${contestCap} disputa${contestCap === 1 ? "" : "s"} (drops com 2 times). Os outros drops ficam com 1 time só.`,
+      );
+    }
   }
   occupying.push(nextClaim);
   nextById.set(drop.id, occupying);

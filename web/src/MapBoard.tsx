@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import type { DropSpot } from "./api";
-import { listDropClaims, teamOnDrop } from "./drops";
+import { dropIsFull, listDropClaims, teamOnDrop } from "./drops";
 import {
   centroidOf,
   clickPercent,
@@ -37,6 +37,7 @@ export function MapBoard({
   onRemove,
   selectedId,
   occupancyLimit = 1,
+  maxContestedDrops = 999,
   compact,
 }: {
   imageUrl: string;
@@ -45,6 +46,7 @@ export function MapBoard({
   play?: boolean;
   myTeam?: string;
   occupancyLimit?: number;
+  maxContestedDrops?: number;
   compact?: boolean;
   onCreate?: (drop: Omit<DropSpot, "id" | "claimedByTeam">) => void;
   onPick?: (drop: DropSpot) => void;
@@ -406,9 +408,11 @@ export function MapBoard({
                     <polygon
                       key={drop.id}
                       points={polygonPoints(drop.vertices)}
-                      className={`drop-poly ${listDropClaims(drop).length ? "taken" : "idle"} ${
+                        className={`drop-poly ${listDropClaims(drop).length ? "taken" : "idle"} ${
                         teamOnDrop(drop, myTeam ?? "") ? "mine" : ""
-                      } ${listDropClaims(drop).length >= occupancyLimit ? "full" : ""} ${
+                      } ${
+                        dropIsFull(drop, occupancyLimit, myTeam, drops, maxContestedDrops) ? "full" : ""
+                      } ${
                         hoverId === drop.id || selectedId === drop.id ? "selected" : ""
                       }`}
                     />
@@ -434,7 +438,7 @@ export function MapBoard({
               {drops.map((drop) => {
                 const claims = listDropClaims(drop);
                 const mine = teamOnDrop(drop, myTeam ?? "");
-                const full = claims.length >= occupancyLimit;
+                const full = dropIsFull(drop, occupancyLimit, myTeam, drops, maxContestedDrops);
                 return (
                   <div key={`${drop.id}-markers`} className="drop-layer">
                     {claims.length > 0 ? (

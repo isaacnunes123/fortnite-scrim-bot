@@ -7,7 +7,7 @@ import { getBotStatus, getDiscordClient } from "../bot/client.js";
 import { getGuild, listBotGuilds, notifyInvite, resolveDiscordPlayer, rosterForScrim } from "../bot/guild.js";
 import { subscribe } from "../scrims/live.js";
 import { env } from "../env.js";
-import { DEFAULT_MAP_URL, saveUploadedMap, uploadDir } from "../scrims/maps.js";
+import { DEFAULT_MAP_URL, savePresetMap, saveUploadedMap, uploadDir } from "../scrims/maps.js";
 import {
   beginDiscordLogin,
   finishDiscordLogin,
@@ -36,6 +36,7 @@ import {
   importTemplate,
   listTemplates,
   clampTeamsPerDrop,
+  clampMaxContestedDrops,
   patchTemplate,
   deleteScrim,
   ensureScrimHasDrops,
@@ -46,11 +47,14 @@ import {
   listBlacklist,
   listInvites,
   listLogs,
+  listScrimPresets,
   listScrims,
   MODE_SIZE,
   normalizeDrop,
   patchScrim,
   removeInvite,
+  saveScrimPreset,
+  deleteScrimPreset,
   teamCount,
   type PriorityWindow,
 } from "../scrims/store.js";
@@ -75,10 +79,23 @@ function parseWindows(raw: unknown): PriorityWindow[] {
   if (!Array.isArray(raw)) {
     return [];
   }
-  return raw.map((item) => ({
-    roleId: String((item as PriorityWindow).roleId ?? "").trim(),
-    time: String((item as PriorityWindow).time ?? "").trim().slice(0, 5),
-  }));
+  return raw.map((item) => {
+    const row = item as PriorityWindow & { at?: string };
+    const at = String(row.at ?? "").trim();
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(at)) {
+      const [date, time] = at.split("T");
+      return {
+        roleId: String(row.roleId ?? "").trim(),
+        date: (date ?? "").slice(0, 10),
+        time: (time ?? "").slice(0, 5),
+      };
+    }
+    return {
+      roleId: String(row.roleId ?? "").trim(),
+      time: String(row.time ?? "").trim().slice(0, 5),
+      date: String(row.date ?? "").trim().slice(0, 10),
+    };
+  });
 }
 
 export async function createWebApp() {
@@ -88,6 +105,7 @@ export async function createWebApp() {
   app.use(express.json({ limit: "8mb" }));
   app.use(cookieParser(env.sessionSecret));
   app.use("/uploads", express.static(uploadDir));
+  app.use("/preset-files", express.static(path.join(process.cwd(), "presets", "maps")));
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, service: "fortnite-scrim-bot" });
@@ -215,6 +233,9 @@ export async function createWebApp() {
       if (drops) {
         patch.drops = drops;
       }
+      if (req.body?.maxContestedDrops != null) {
+        patch.maxContestedDrops = clampMaxContestedDrops(req.body.maxContestedDrops);
+      }
       const template = patchTemplate(String(req.params.id), patch);
       res.json({ template });
     } catch (error) {
@@ -225,6 +246,46 @@ export async function createWebApp() {
   app.delete("/api/templates/:id", requireAuth, (req, res) => {
     if (!deleteTemplate(String(req.params.id))) {
       res.status(404).json({ error: "Preset não encontrado" });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
+  app.get("/api/scrim-presets", requireAuth, (_req, res) => {
+    res.json({ presets: listScrimPresets() });
+  });
+
+  app.post("/api/scrim-presets", requireAuth, (req, res) => {
+    const name = String(req.body?.name ?? "").trim();
+    if (!name) {
+      res.status(400).json({ error: "Dê um nome para este preset de scrim" });
+      return;
+    }
+    try {
+      res.status(201).json({
+        preset: saveScrimPreset({
+          id: String(req.body?.id ?? "").trim() || undefined,
+          name,
+          mode: req.body?.mode,
+          maxSlots: req.body?.maxSlots,
+          teamsPerDrop: req.body?.teamsPerDrop,
+          maxContestedDrops: req.body?.maxContestedDrops,
+          templateId: String(req.body?.templateId ?? ""),
+          accessRoleIds: Array.isArray(req.body?.accessRoleIds) ? req.body.accessRoleIds : [],
+          staffRoleIds: Array.isArray(req.body?.staffRoleIds) ? req.body.staffRoleIds : [],
+          windows: parseWindows(req.body?.windows),
+          leaveUntil: String(req.body?.leaveUntil ?? ""),
+          punishHours: req.body?.punishHours,
+        }),
+      });
+    } catch (error) {
+      fail(res, error, "Não foi possível salvar o preset de scrim");
+    }
+  });
+
+  app.delete("/api/scrim-presets/:id", requireAuth, (req, res) => {
+    if (!deleteScrimPreset(String(req.params.id))) {
+      res.status(404).json({ error: "Preset de scrim não encontrado" });
       return;
     }
     res.json({ ok: true });
@@ -248,10 +309,14 @@ export async function createWebApp() {
         res.status(400).json({ error: "Arquivo de mapa inválido" });
         return;
       }
-      const mapImageUrl = saveUploadedMap(
-        buffer,
-        String(req.headers["content-type"] ?? "image/png"),
-      );
+      const mime = String(req.headers["content-type"] ?? "image/png");
+      const uploaded = saveUploadedMap(buffer, mime);
+      let mapImageUrl = uploaded;
+      try {
+        mapImageUrl = savePresetMap(template.id, buffer, mime);
+      } catch {
+        mapImageUrl = uploaded;
+      }
       res.json({ template: patchTemplate(template.id, { mapImageUrl }) });
     },
   );
@@ -316,6 +381,7 @@ export async function createWebApp() {
     const windows = parseWindows(req.body?.windows);
     const templateId = String(req.body?.templateId ?? "").trim();
     const teamsPerDrop = clampTeamsPerDrop(req.body?.teamsPerDrop);
+    const maxContestedDrops = clampMaxContestedDrops(req.body?.maxContestedDrops);
     const clientGuild = getGuild(client);
     if (!clientGuild) {
       res.status(400).json({
@@ -343,8 +409,11 @@ export async function createWebApp() {
       res.status(400).json({ error: "Escolha pelo menos um cargo de staff" });
       return;
     }
-    if (windows.length === 0 || windows.some((window) => !/^\d{2}:\d{2}$/.test(window.time))) {
-      res.status(400).json({ error: "Informe os horários de prioridade (HH:MM)" });
+    if (
+      windows.length === 0 ||
+      windows.some((window) => !/^\d{2}:\d{2}$/.test(window.time) || !/^\d{4}-\d{2}-\d{2}$/.test(window.date))
+    ) {
+      res.status(400).json({ error: "Em cada linha de check-in, escolha a data e o horário (Brasília)." });
       return;
     }
     if (!getTemplate(templateId)) {
@@ -363,6 +432,7 @@ export async function createWebApp() {
         guildName: clientGuild.name,
         templateId,
         teamsPerDrop,
+        maxContestedDrops,
       });
       const scrim = await provisionLobby(client, created);
       res.status(201).json({ scrim });
@@ -424,10 +494,12 @@ export async function createWebApp() {
       res.status(404).json({ error: "Scrim não encontrada" });
       return;
     }
-    const leaveUntil = String(req.body?.leaveUntil ?? "").trim().slice(0, 5);
+    const leaveUntil = String(req.body?.leaveUntil ?? "").trim();
     const punishHours = Number(req.body?.punishHours ?? scrim.punishHours ?? 24);
-    if (!/^\d{2}:\d{2}$/.test(leaveUntil)) {
-      res.status(400).json({ error: "Informe o horário de checkout (HH:MM)" });
+    const okTime = /^\d{2}:\d{2}$/.test(leaveUntil);
+    const okDate = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(leaveUntil);
+    if (!okTime && !okDate) {
+      res.status(400).json({ error: "Informe a data e o horário do checkout (Brasília)." });
       return;
     }
     if (!Number.isInteger(punishHours) || punishHours < 1 || punishHours > 720) {
@@ -669,6 +741,7 @@ export async function createWebApp() {
       canClaim: access.access.canClaim,
       dropsOpen: live.dropsOpen,
       teamsPerDrop: live.teamsPerDrop,
+      maxContestedDrops: live.maxContestedDrops,
       fortniteNick: access.access.fortniteNick,
       steps: access.access.isStaff
         ? []
@@ -678,9 +751,9 @@ export async function createWebApp() {
               "No Discord você já deve ver o canal de código e o getting-off.",
             ]
           : [
-              "Clique na área ou no número do drop.",
-              "Confirme o drop.",
-              "Depois disso o Discord libera código e getting-off.",
+              "Clique no retângulo do drop no mapa.",
+              "Confirme. Se o drop já tiver 1 time, o segundo vira disputa (quando ainda houver disputa livre no mapa).",
+              "Depois o Discord libera código e getting-off.",
             ],
     });
   });

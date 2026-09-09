@@ -21,10 +21,29 @@ export function teamOnDrop(drop: DropSpot, teamName: string): boolean {
   return Boolean(teamName) && listDropClaims(drop).some((claim) => claim.teamName === teamName);
 }
 
-export function dropIsFull(drop: DropSpot, limit: number, teamName?: string): boolean {
+export function contestedDropCount(drops: DropSpot[]): number {
+  return drops.filter((drop) => listDropClaims(drop).length >= 2).length;
+}
+
+export function dropIsFull(
+  drop: DropSpot,
+  limit: number,
+  teamName?: string,
+  allDrops: DropSpot[] = [],
+  maxContestedDrops = 999,
+): boolean {
   const claims = listDropClaims(drop);
   if (teamName && claims.some((claim) => claim.teamName === teamName)) {
     return false;
   }
-  return claims.length >= Math.max(1, limit);
+  if (claims.length >= Math.max(1, limit)) {
+    return true;
+  }
+  if (claims.length >= 1 && limit > 1 && maxContestedDrops < 999) {
+    const alreadyContested = claims.length >= 2;
+    if (!alreadyContested && contestedDropCount(allDrops) >= maxContestedDrops) {
+      return true;
+    }
+  }
+  return false;
 }

@@ -601,7 +601,7 @@ select:focus {
 
 .window-row {
   display: grid;
-  grid-template-columns: 1fr 120px;
+  grid-template-columns: 1fr minmax(210px, 1.2fr);
   gap: 8px;
 }
 

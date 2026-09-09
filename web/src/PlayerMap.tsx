@@ -15,6 +15,7 @@ export function PlayerMap() {
   const [canClaim, setCanClaim] = useState(false);
   const [dropsOpen, setDropsOpen] = useState(true);
   const [teamsPerDrop, setTeamsPerDrop] = useState(1);
+  const [maxContestedDrops, setMaxContestedDrops] = useState(999);
   const [steps, setSteps] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -39,6 +40,7 @@ export function PlayerMap() {
       canClaim?: boolean;
       dropsOpen?: boolean;
       teamsPerDrop?: number;
+      maxContestedDrops?: number;
       steps?: string[];
     };
     if (response.status === 401 && data.login) {
@@ -57,6 +59,7 @@ export function PlayerMap() {
     setCanClaim(Boolean(data.canClaim));
     setDropsOpen(data.dropsOpen !== false);
     setTeamsPerDrop(Math.max(1, Number(data.teamsPerDrop) || 1));
+    setMaxContestedDrops(Number(data.maxContestedDrops) || 999);
     setSteps(data.steps ?? []);
     setReady(true);
     return "ok";
@@ -125,9 +128,12 @@ export function PlayerMap() {
       setError(null);
       return;
     }
-    if (dropIsFull(drop, teamsPerDrop, teamName)) {
+    if (dropIsFull(drop, teamsPerDrop, teamName, drops, maxContestedDrops)) {
+      const contests = drops.filter((item) => listDropClaims(item).length >= 2).length;
       setError(
-        `Não foi possível marcar ${drop.name}. Limite de ${teamsPerDrop} time(s) neste drop já foi atingido.`,
+        listDropClaims(drop).length >= teamsPerDrop
+          ? `O drop ${drop.name} já está cheio (${teamsPerDrop} time${teamsPerDrop === 1 ? "" : "s"}).`
+          : `O mapa já usou as ${maxContestedDrops} disputa${maxContestedDrops === 1 ? "" : "s"} (${contests}/${maxContestedDrops} drops com 2 times). Escolha um drop vazio.`,
       );
       return;
     }
@@ -137,7 +143,7 @@ export function PlayerMap() {
 
   const mine = drops.find((drop) => teamOnDrop(drop, teamName));
   const claimed = drops.filter((drop) => listDropClaims(drop).length > 0).length;
-  const free = drops.filter((drop) => !dropIsFull(drop, teamsPerDrop)).length;
+  const free = drops.filter((drop) => !dropIsFull(drop, teamsPerDrop, teamName, drops, maxContestedDrops)).length;
   const sorted = [...drops].sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { numeric: true }));
 
   return (
@@ -207,6 +213,7 @@ export function PlayerMap() {
             play
             myTeam={teamName}
             occupancyLimit={teamsPerDrop}
+            maxContestedDrops={maxContestedDrops}
             compact
             onPick={onPick}
             onMiss={() =>
@@ -223,12 +230,12 @@ export function PlayerMap() {
         </div>
         <aside className="card drop-side desktop-only">
           <h3>Drops</h3>
-          <p className="muted">Clique para confirmar. Avatares aparecem ao vivo.</p>
+        <p className="muted">Clique no drop para confirmar. Avatares aparecem ao vivo.</p>
           <ul>
             {sorted.map((drop) => {
               const claims = listDropClaims(drop);
               const isMine = teamOnDrop(drop, teamName);
-              const full = dropIsFull(drop, teamsPerDrop, teamName);
+              const full = dropIsFull(drop, teamsPerDrop, teamName, drops, maxContestedDrops);
               return (
                 <li key={drop.id}>
                   <button

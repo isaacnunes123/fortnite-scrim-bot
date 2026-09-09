@@ -8,6 +8,7 @@ import {
   type Invite,
   type MapTemplate,
   type PriorityWindow,
+  type ScrimPreset,
   type ActivityLog,
   type ScrimEmbeds,
   type ScrimDetail,
@@ -91,6 +92,10 @@ function ActivityFeed({
       )}
     </section>
   );
+}
+
+function brasiliaToday(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
 }
 
 function formatUptime(ms: number | null): string {
@@ -231,7 +236,7 @@ export function App() {
         </button>
         <div className="actions">
           <button className="btn secondary" type="button" onClick={() => setView({ page: "presets" })}>
-            Presets de mapa
+            Presets
           </button>
           <span className={`pill ${online ? "ok" : "off"}`}>
             {online ? "Bot online" : "Bot offline"}
@@ -278,15 +283,19 @@ function Home({
   const [name, setName] = useState("");
   const [mode, setMode] = useState("trio");
   const [maxSlots, setMaxSlots] = useState(20);
-  const [teamsPerDrop, setTeamsPerDrop] = useState(1);
+  const [teamsPerDrop, setTeamsPerDrop] = useState(2);
+  const [maxContestedDrops, setMaxContestedDrops] = useState(14);
   const [blacklist, setBlacklist] = useState<BlacklistEntry[]>([]);
   const [templates, setTemplates] = useState<MapTemplate[]>([]);
   const [templateId, setTemplateId] = useState("");
+  const [scrimPresets, setScrimPresets] = useState<ScrimPreset[]>([]);
+  const [scrimPresetId, setScrimPresetId] = useState("");
+  const [scrimPresetName, setScrimPresetName] = useState("");
   const [roles, setRoles] = useState<DiscordRole[]>([]);
   const [accessRoleIds, setAccessRoleIds] = useState<string[]>([]);
   const [staffRoleIds, setStaffRoleIds] = useState<string[]>([]);
   const [windows, setWindows] = useState<PriorityWindow[]>([
-    { roleId: "", time: "21:50" },
+    { roleId: "", time: "21:50", date: brasiliaToday() },
   ]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -315,6 +324,9 @@ function Home({
     api<{ blacklist: BlacklistEntry[] }>("/api/blacklist")
       .then((data) => setBlacklist(data.blacklist))
       .catch(() => undefined);
+    api<{ presets: ScrimPreset[] }>("/api/scrim-presets")
+      .then((data) => setScrimPresets(data.presets))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -332,7 +344,11 @@ function Home({
   async function onCreate(event: FormEvent) {
     event.preventDefault();
     if (!Number.isInteger(teamsPerDrop) || teamsPerDrop < 1 || teamsPerDrop > 20) {
-      setError("Times por drop precisa ser um número de 1 a 20.");
+      setError("Times por drop: escolha de 1 a 20. 1 = um time sozinho. 2 = pode virar disputa.");
+      return;
+    }
+    if (!Number.isInteger(maxContestedDrops) || maxContestedDrops < 0 || maxContestedDrops > 200) {
+      setError("Limite de disputas: 0 (ninguém disputa) até 200.");
       return;
     }
     setSaving(true);
@@ -345,6 +361,7 @@ function Home({
           mode,
           maxSlots,
           teamsPerDrop,
+          maxContestedDrops,
           accessRoleIds,
           staffRoleIds,
           windows,
@@ -386,11 +403,53 @@ function Home({
         <form className="card" onSubmit={onCreate}>
           <h2 style={{ marginTop: 0 }}>Nova scrim</h2>
           <p className="muted">
-            O bot cria a categoria no Discord: registro, drop, code, chat, saída, fill e admin.
-            O horário de checkout é definido depois, no painel da scrim.
+            Isso cria a categoria no Discord (check-in, mapa, código, chat, saída, fill e admin).
+            Depois, no painel da scrim, você define até quando a saída é livre.
           </p>
           {error ? <p className="error">{error}</p> : null}
-          <label htmlFor="name">Nome</label>
+          <label htmlFor="scrim-preset">Carregar preset de scrim</label>
+          <select
+            id="scrim-preset"
+            value={scrimPresetId}
+            onChange={(event) => {
+              const id = event.target.value;
+              setScrimPresetId(id);
+              const preset = scrimPresets.find((item) => item.id === id);
+              if (!preset) {
+                return;
+              }
+              setName(preset.name.replace(/\s+preset$/i, ""));
+              setMode(preset.mode);
+              setMaxSlots(preset.maxSlots);
+              setTeamsPerDrop(preset.teamsPerDrop);
+              setMaxContestedDrops(preset.maxContestedDrops > 200 ? 14 : preset.maxContestedDrops);
+              setTemplateId(preset.templateId);
+              setAccessRoleIds(preset.accessRoleIds);
+              setStaffRoleIds(preset.staffRoleIds);
+              setWindows(
+                preset.windows.length
+                  ? preset.windows.map((window) => ({
+                      roleId: window.roleId,
+                      time: window.time,
+                      date: window.date || brasiliaToday(),
+                    }))
+                  : [{ roleId: "", time: "21:50", date: brasiliaToday() }],
+              );
+              setScrimPresetName(preset.name);
+            }}
+          >
+            <option value="">Não usar (preencher na mão)</option>
+            {scrimPresets.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          <p className="muted">
+            Preset de scrim guarda modo, vagas, cargos, mapa, check-in e limite de disputas. O
+            Discord da lobby é criado só quando você aperta criar.
+          </p>
+          <label htmlFor="name">Nome da scrim</label>
           <input
             id="name"
             value={name}
@@ -405,7 +464,7 @@ function Home({
             <option value="trio">Trio</option>
             <option value="squad">Squad</option>
           </select>
-          <label htmlFor="slots">Limite de times</label>
+          <label htmlFor="slots">Quantos times entram nesta scrim?</label>
           <input
             id="slots"
             type="number"
@@ -415,7 +474,7 @@ function Home({
             onChange={(event) => setMaxSlots(Number(event.target.value))}
             required
           />
-          <label htmlFor="teams-per-drop">Times por drop</label>
+          <label htmlFor="teams-per-drop">Quantos times no mesmo drop?</label>
           <input
             id="teams-per-drop"
             type="number"
@@ -426,9 +485,28 @@ function Home({
             required
           />
           <p className="muted">
-            Se for 2, só 2 times podem ficar no mesmo drop. O terceiro recebe erro e não entra.
+            1 = cada drop é de um time só. 2 = o drop pode virar disputa (dois times no mesmo
+            lugar).
           </p>
-          <p className="muted">Cargos da divisão (veem o check-in)</p>
+          {teamsPerDrop > 1 ? (
+            <>
+              <label htmlFor="max-contests">Limite de disputas no mapa inteiro</label>
+              <input
+                id="max-contests"
+                type="number"
+                min={0}
+                max={200}
+                value={maxContestedDrops}
+                onChange={(event) => setMaxContestedDrops(Number(event.target.value))}
+                required
+              />
+              <p className="muted">
+                Exemplo: 36 drops e 14 disputas. Só 14 drops podem ter 2 times. Os outros 22
+                ficam com 1 time. 0 = ninguém disputa.
+              </p>
+            </>
+          ) : null}
+          <p className="muted">Quem pode fazer check-in (cargos da divisão)</p>
           <div className="role-list">
             {roles.map((role) => (
               <label key={role.id} className="role-item">
@@ -441,7 +519,7 @@ function Home({
               </label>
             ))}
           </div>
-          <p className="muted">Cargos de staff (admin + aprovar fill)</p>
+          <p className="muted">Staff (libera fill, edita a scrim, vê o painel)</p>
           <div className="role-list">
             {roles.map((role) => (
               <label key={`s-${role.id}`} className="role-item">
@@ -454,7 +532,7 @@ function Home({
               </label>
             ))}
           </div>
-          <p className="muted">Horários de prioridade (horário de Brasília)</p>
+          <p className="muted">Quando cada cargo pode fazer check-in (data e hora de Brasília)</p>
           {windows.map((window, index) => (
             <div className="window-row" key={`${window.roleId}-${index}`}>
               <select
@@ -465,7 +543,7 @@ function Home({
                   setWindows(next);
                 }}
               >
-                <option value="">Sem prioridade</option>
+                <option value="">Sem prioridade (todo mundo neste horário)</option>
                 {roles.map((role) => (
                   <option key={role.id} value={role.id}>
                     {role.name}
@@ -473,11 +551,14 @@ function Home({
                 ))}
               </select>
               <input
-                type="time"
-                value={window.time}
+                type="datetime-local"
+                value={
+                  window.date && window.time ? `${window.date}T${window.time}` : ""
+                }
                 onChange={(event) => {
+                  const [date, time] = event.target.value.split("T");
                   const next = [...windows];
-                  next[index] = { ...window, time: event.target.value };
+                  next[index] = { ...window, date: date ?? "", time: (time ?? "").slice(0, 5) };
                   setWindows(next);
                 }}
                 required
@@ -487,11 +568,13 @@ function Home({
           <button
             className="btn secondary"
             type="button"
-            onClick={() => setWindows([...windows, { roleId: "", time: "21:55" }])}
+            onClick={() =>
+              setWindows([...windows, { roleId: "", time: "21:55", date: brasiliaToday() }])
+            }
           >
-            + horário
+            + outro horário de check-in
           </button>
-          <label htmlFor="template">Preset de mapa</label>
+          <label htmlFor="template">Preset de mapa (drops já desenhados)</label>
           <select
             id="template"
             value={templateId}
@@ -505,7 +588,57 @@ function Home({
               </option>
             ))}
           </select>
-          <p className="muted">Os drops vêm prontos do preset. Edite-os em Presets de mapa.</p>
+          <p className="muted">
+            Os drops já vêm desenhados neste preset. Para mudar o mapa, abra <b>Presets</b> no
+            topo, desenhe, clique em <b>Salvar preset</b> e só então crie a scrim.
+          </p>
+          <label htmlFor="save-scrim-preset">Guardar estas configs como preset de scrim</label>
+          <input
+            id="save-scrim-preset"
+            value={scrimPresetName}
+            onChange={(event) => setScrimPresetName(event.target.value)}
+            placeholder="Ex.: Closed trio div 2"
+          />
+          <button
+            className="btn secondary"
+            type="button"
+            onClick={async () => {
+              setError(null);
+              try {
+                const saved = await api<{ preset: ScrimPreset }>("/api/scrim-presets", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    id: scrimPresetId || undefined,
+                    name: scrimPresetName || name || "Preset de scrim",
+                    mode,
+                    maxSlots,
+                    teamsPerDrop,
+                    maxContestedDrops,
+                    templateId,
+                    accessRoleIds,
+                    staffRoleIds,
+                    windows,
+                    leaveUntil: "",
+                    punishHours: 24,
+                  }),
+                });
+                setScrimPresets((current) => {
+                  const rest = current.filter((item) => item.id !== saved.preset.id);
+                  return [...rest, saved.preset].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+                });
+                setScrimPresetId(saved.preset.id);
+                setScrimPresetName(saved.preset.name);
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Não foi possível salvar o preset de scrim");
+              }
+            }}
+          >
+            Salvar preset de scrim
+          </button>
+          <p className="muted">
+            O preset fica na pasta do sistema e não some quando o código atualiza. No Railway,
+            monte um volume em /data (DATA_DIR) para não perder dados ao redeployar.
+          </p>
           <button className="btn" type="submit" disabled={saving}>
             {saving ? "Criando no Discord…" : "Criar scrim no Discord"}
           </button>
@@ -713,6 +846,9 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           <p className="muted">
             {scrim.mode} · {scrim.teamSize} por time · {scrim.teamCount}/{scrim.maxSlots} times
             {` · ${scrim.teamsPerDrop ?? 1} time(s) por drop`}
+            {scrim.maxContestedDrops != null && scrim.maxContestedDrops < 999
+              ? ` · ${scrim.maxContestedDrops} disputa(s) no mapa`
+              : ""}
             {scrim.discord ? ` · lobby ${scrim.discord.lobbyNumber}` : ""}
             {scrim.leaveUntil
               ? ` · checkout ${scrim.leaveUntil} · ban ${scrim.punishHours}h`
@@ -752,14 +888,24 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           }
         }}
       >
-        <label htmlFor="leaveUntil">Checkout (saída livre até, horário de Brasília)</label>
+        <label htmlFor="leaveUntil">Saída livre até (data e hora de Brasília)</label>
         <input
           id="leaveUntil"
-          type="time"
-          value={leaveUntil}
+          type="datetime-local"
+          value={
+            leaveUntil.includes("T")
+              ? leaveUntil.slice(0, 16)
+              : leaveUntil
+                ? `${brasiliaToday()}T${leaveUntil}`
+                : ""
+          }
           onChange={(event) => setLeaveUntil(event.target.value)}
           required
         />
+        <p className="muted">
+          Até este momento o player pode sair sem punição. Depois, se sair, entra na blacklist
+          da closed pelo tempo abaixo.
+        </p>
         <label htmlFor="punishHours">Ban da closed se sair depois (horas)</label>
         <input
           id="punishHours"
@@ -771,7 +917,7 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           required
         />
         <button className="btn" type="submit">
-          Definir checkout
+          Definir saída livre
         </button>
       </form>
 
@@ -946,6 +1092,7 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
         imageUrl={scrim.mapImageUrl || "/maps/island.png"}
         drops={drops}
         occupancyLimit={scrim.teamsPerDrop ?? 1}
+        maxContestedDrops={scrim.maxContestedDrops ?? 999}
       />
 
       <form

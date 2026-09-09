@@ -76,6 +76,7 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
       body: JSON.stringify({
         name: next.name,
         drops: next.drops,
+        maxContestedDrops: next.maxContestedDrops ?? 14,
       }),
     });
     setTemplate(data.template);
@@ -195,10 +196,10 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
           <input
             value={newName}
             onChange={(event) => setNewName(event.target.value)}
-            placeholder="Nome do preset"
+            placeholder="Nome do preset de mapa"
           />
           <button className="btn" type="submit">
-            CREATE NEW TEMPLATE
+            Novo preset de mapa
           </button>
         </form>
         <label className="btn secondary">
@@ -244,10 +245,24 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
                   onChange={(event) => updateLocal({ name: event.target.value })}
                 />
                 <p className="muted">
-                  Desenhe os drops no mapa (eles são numerados na ordem). Use uma imagem limpa da
-                  ilha, sem print da HUD. Para o zoom ficar nítido como no Copilot, use PNG ou
-                  WebP de 3000px ou mais (não um print da tela). Nas scrims você só escolhe este
-                  preset.
+                  1. Desenhe os drops no mapa (eles ganham número sozinhos). 2. Clique em{" "}
+                  <b>Salvar preset</b> — isso grava na pasta do sistema, então não some no próximo
+                  deploy. 3. Use uma imagem limpa da ilha (PNG 3000px+). Depois, na home, escolha
+                  este preset ao criar a scrim.
+                </p>
+                <label htmlFor="template-contests">Disputas padrão deste mapa</label>
+                <input
+                  id="template-contests"
+                  type="number"
+                  min={0}
+                  max={200}
+                  value={template.maxContestedDrops ?? 14}
+                  onChange={(event) =>
+                    updateLocal({ maxContestedDrops: Number(event.target.value) })
+                  }
+                />
+                <p className="muted">
+                  Quantos drops deste mapa podem ter 2 times. Ex.: 36 drops e 14 disputas.
                 </p>
                 {saved ? <p className="ok-text">{saved}</p> : null}
                 {dirty ? <p className="muted">Há alterações sem salvar.</p> : null}
