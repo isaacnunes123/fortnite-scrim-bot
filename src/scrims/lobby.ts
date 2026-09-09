@@ -3,6 +3,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
+  DiscordAPIError,
   EmbedBuilder,
   PermissionFlagsBits,
   type Client,
@@ -13,8 +14,10 @@ import {
 import { getGuild } from "../bot/guild.js";
 import { dropMapUrl, publicBaseUrl } from "./links.js";
 import {
+  addLog,
   applyEmbedVars,
   claimDrop,
+  flushStore,
   getScrim,
   listInvites,
   markDropped,
@@ -27,6 +30,133 @@ import {
 } from "./store.js";
 import { clockMinutes, formatLeaveUntil, formatWindowWhen, parseBrasiliaDateTime, parseClock } from "./time.js";
 
+export class DiscordProvisionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DiscordProvisionError";
+  }
+}
+
+function discordErrorCode(error: unknown): number | null {
+  const raw =
+    error instanceof DiscordAPIError
+      ? error.code
+      : error && typeof error === "object" && "code" in error
+        ? (error as { code?: unknown }).code
+        : null;
+  const code = Number(raw);
+  return Number.isFinite(code) ? code : null;
+}
+
+export function explainDiscordError(error: unknown): string {
+  if (error instanceof DiscordProvisionError) {
+    return error.message;
+  }
+  const code = discordErrorCode(error);
+  const text = error instanceof Error ? error.message : String(error ?? "");
+  if (code === 50013 || /missing permissions/i.test(text)) {
+    return "O bot não tem permissão para criar canais ou cargos. No servidor: Configurações → Cargos → cargo do bot → marque Gerenciar Canais e Gerenciar Cargos. O cargo do bot precisa ficar acima dos cargos da divisão.";
+  }
+  if (code === 30013) {
+    return "O servidor chegou no limite de canais do Discord. Apague categorias antigas de lobby e tente de novo.";
+  }
+  if (code === 30005) {
+    return "O servidor chegou no limite de cargos do Discord. Apague cargos antigos de lobby (lobby-N-in / lobby-N-ready) e tente de novo.";
+  }
+  if (text) {
+    return text;
+  }
+  return "Não foi possível criar a categoria no Discord";
+}
+
+function isPermanentDiscordError(error: unknown): boolean {
+  const code = discordErrorCode(error);
+  return (
+    error instanceof DiscordProvisionError ||
+    code === 50013 ||
+    code === 30013 ||
+    code === 30005 ||
+    code === 50001 ||
+    code === 50035
+  );
+}
+
+async function withDiscordRetry<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      last = error;
+      if (isPermanentDiscordError(error) || i === attempts - 1) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 400 * (i + 1)));
+    }
+  }
+  throw last;
+}
+
+export async function assertBotCanProvision(guild: Guild, client: Client): Promise<void> {
+  const me = guild.members.me ?? (await guild.members.fetch(client.user!.id));
+  const missing: string[] = [];
+  if (!me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+    missing.push("Gerenciar Canais");
+  }
+  if (!me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+    missing.push("Gerenciar Cargos");
+  }
+  if (missing.length > 0) {
+    throw new DiscordProvisionError(
+      `O bot precisa das permissões ${missing.join(" e ")} neste servidor para criar a categoria (check-in, mapa, código, chat, saída, fill e admin). Abra Configurações do servidor → Cargos → cargo do bot e marque essas permissões. O cargo do bot deve ficar acima dos cargos da divisão.`,
+    );
+  }
+}
+
+const provisioningIds = new Set<string>();
+
+export function beginLobbyProvision(client: Client, scrim: Scrim): void {
+  if (provisioningIds.has(scrim.id)) {
+    return;
+  }
+  provisioningIds.add(scrim.id);
+  void (async () => {
+    try {
+      const ready = await provisionLobby(client, scrim);
+      patchScrim(ready.id, { provisionStatus: "ready", provisionError: null });
+      addLog({
+        scrimId: ready.id,
+        kind: "scrim",
+        summary: "Categoria criada no Discord",
+        detail: ready.discord ? `lobby ${ready.discord.lobbyNumber}` : ready.name,
+      });
+      await flushStore();
+    } catch (error) {
+      const message = explainDiscordError(error);
+      console.error("[lobby] provision:", error);
+      const live = getScrim(scrim.id);
+      if (live?.discord) {
+        await teardownLobby(client, live).catch(() => undefined);
+      }
+      patchScrim(scrim.id, {
+        discord: null,
+        provisionStatus: "failed",
+        provisionError: message,
+      });
+      addLog({
+        scrimId: scrim.id,
+        kind: "scrim",
+        summary: "Falha ao criar canais no Discord",
+        detail: message,
+      });
+      await flushStore().catch((flushError) => {
+        console.error("[lobby] flush após falha:", flushError);
+      });
+    } finally {
+      provisioningIds.delete(scrim.id);
+    }
+  })();
+}
 
 function everyoneDeny(guild: Guild): OverwriteResolvable {
   return {
@@ -182,45 +312,54 @@ export async function provisionLobby(client: Client, scrim: Scrim): Promise<Scri
   if (!guild) {
     throw new Error("Servidor não encontrado. Escolha o servidor no painel.");
   }
+  await assertBotCanProvision(guild, client);
 
   const lobbyNumber = nextLobbyNumber(scrim.guildId);
   const prefix = `lobby-${lobbyNumber}`;
 
-  const registered = await guild.roles.create({
-    name: `${prefix}-in`,
-    mentionable: false,
-    reason: `Registro ${scrim.name}`,
-  });
-  const confirmed = await guild.roles.create({
-    name: `${prefix}-ready`,
-    mentionable: false,
-    reason: `Drop confirmado ${scrim.name}`,
-  });
+  const registered = await withDiscordRetry(() =>
+    guild.roles.create({
+      name: `${prefix}-in`,
+      mentionable: false,
+      reason: `Registro ${scrim.name}`,
+    }),
+  );
+  const confirmed = await withDiscordRetry(() =>
+    guild.roles.create({
+      name: `${prefix}-ready`,
+      mentionable: false,
+      reason: `Drop confirmado ${scrim.name}`,
+    }),
+  );
 
   const staffOverwrites = scrim.staffRoleIds.map((roleId) => roleView(roleId, true));
   const accessView = scrim.accessRoleIds.map((roleId) => roleView(roleId, false));
 
-  const category = await guild.channels.create({
-    name: `${prefix} ${scrim.name}`.slice(0, 100),
-    type: ChannelType.GuildCategory,
-    permissionOverwrites: [
-      everyoneDeny(guild),
-      botAllow(guild, client),
-      ...accessView,
-      ...staffOverwrites,
-    ],
-  });
+  const category = await withDiscordRetry(() =>
+    guild.channels.create({
+      name: `${prefix} ${scrim.name}`.slice(0, 100),
+      type: ChannelType.GuildCategory,
+      permissionOverwrites: [
+        everyoneDeny(guild),
+        botAllow(guild, client),
+        ...accessView,
+        ...staffOverwrites,
+      ],
+    }),
+  );
 
   const makeText = async (
     name: string,
     overwrites: OverwriteResolvable[],
   ): Promise<TextChannel> => {
-    return guild.channels.create({
-      name,
-      type: ChannelType.GuildText,
-      parent: category.id,
-      permissionOverwrites: [everyoneDeny(guild), botAllow(guild, client), ...overwrites],
-    });
+    return withDiscordRetry(() =>
+      guild.channels.create({
+        name,
+        type: ChannelType.GuildText,
+        parent: category.id,
+        permissionOverwrites: [everyoneDeny(guild), botAllow(guild, client), ...overwrites],
+      }),
+    );
   };
 
   const registration = await makeText(`${prefix}-registration`, [
@@ -265,16 +404,20 @@ export async function provisionLobby(client: Client, scrim: Scrim): Promise<Scri
     fillChatOpen: false,
   };
 
-  const saved = patchScrim(scrim.id, { discord });
+  const saved = patchScrim(scrim.id, { discord, provisionStatus: "pending", provisionError: null });
 
-  const registerMsg = await registration.send({
-    embeds: [registrationEmbed(saved, guild)],
-    components: [registrationRow(saved.id)],
-  });
-  const leaveMsg = await leave.send({
-    embeds: [leaveEmbed(saved)],
-    components: [leaveRow(saved.id)],
-  });
+  const registerMsg = await withDiscordRetry(() =>
+    registration.send({
+      embeds: [registrationEmbed(saved, guild)],
+      components: [registrationRow(saved.id)],
+    }),
+  );
+  const leaveMsg = await withDiscordRetry(() =>
+    leave.send({
+      embeds: [leaveEmbed(saved)],
+      components: [leaveRow(saved.id)],
+    }),
+  );
   const withIds = patchScrim(scrim.id, {
     discord: {
       ...discord,

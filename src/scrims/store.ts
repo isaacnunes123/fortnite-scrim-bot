@@ -92,6 +92,8 @@ export type ActivityLog = {
   detail: string;
 };
 
+export type ProvisionStatus = "pending" | "ready" | "failed";
+
 export type Scrim = {
   id: string;
   name: string;
@@ -108,6 +110,8 @@ export type Scrim = {
   mapImageUrl: string;
   matchCode: string;
   discord: DiscordLobby | null;
+  provisionStatus: ProvisionStatus;
+  provisionError: string | null;
   drops: DropSpot[];
   templateId: string;
   templateName: string;
@@ -471,7 +475,21 @@ export function normalizeDrop(raw: Partial<DropSpot> & { radius?: number }): Dro
   );
 }
 
+function normalizeProvisionStatus(raw: Partial<Scrim>): ProvisionStatus {
+  if (raw.provisionStatus === "pending" || raw.provisionStatus === "ready" || raw.provisionStatus === "failed") {
+    return raw.provisionStatus;
+  }
+  return "ready";
+}
+
 function normalizeScrim(raw: Scrim): Scrim {
+  const discord = raw.discord
+    ? {
+        ...raw.discord,
+        leaveMessageId: raw.discord.leaveMessageId ?? null,
+        dropMapMessageId: raw.discord.dropMapMessageId ?? null,
+      }
+    : null;
   return {
     ...raw,
     accessRoleIds: raw.accessRoleIds ?? [],
@@ -483,13 +501,9 @@ function normalizeScrim(raw: Scrim): Scrim {
     guildName: raw.guildName ?? "",
     mapImageUrl: raw.mapImageUrl ?? "",
     matchCode: raw.matchCode ?? "",
-    discord: raw.discord
-      ? {
-          ...raw.discord,
-          leaveMessageId: raw.discord.leaveMessageId ?? null,
-          dropMapMessageId: raw.discord.dropMapMessageId ?? null,
-        }
-      : null,
+    discord,
+    provisionStatus: normalizeProvisionStatus(raw),
+    provisionError: raw.provisionError ? String(raw.provisionError) : null,
     drops: (raw.drops ?? []).map(normalizeDrop),
     templateId: raw.templateId ?? "",
     templateName: raw.templateName ?? "",
@@ -738,12 +752,98 @@ export async function ensureStore(): Promise<void> {
   }
 }
 
+function mergeById<T extends { id: string }>(
+  local: T[],
+  remote: T[],
+  pick: (local: T, remote: T) => T,
+): T[] {
+  const map = new Map<string, T>();
+  for (const row of remote) {
+    if (row?.id) {
+      map.set(row.id, row);
+    }
+  }
+  for (const row of local) {
+    if (!row?.id) {
+      continue;
+    }
+    const previous = map.get(row.id);
+    map.set(row.id, previous ? pick(row, previous) : row);
+  }
+  return [...map.values()];
+}
+
+function pickScrim(local: Scrim, remote: Scrim): Scrim {
+  if (remote.discord && !local.discord) {
+    return remote;
+  }
+  if (local.discord && !remote.discord) {
+    return local;
+  }
+  if (local.provisionStatus === "failed" && remote.provisionStatus === "pending") {
+    return local;
+  }
+  if (remote.provisionStatus === "failed" && local.provisionStatus === "pending") {
+    return remote;
+  }
+  if (remote.provisionStatus === "ready" && local.provisionStatus !== "ready") {
+    return remote;
+  }
+  return local;
+}
+
+function overlayLocalOnRemote(remote: StoreFile, local: StoreFile): StoreFile {
+  return {
+    scrims: mergeById(local.scrims, remote.scrims, pickScrim).map(normalizeScrim),
+    invites: mergeById(local.invites, remote.invites, (row) => row),
+    templates: mergeById(local.templates, remote.templates, (left, right) =>
+      left.drops.length >= right.drops.length ? left : right,
+    ),
+    scrimPresets: mergeById(local.scrimPresets, remote.scrimPresets, (row) => row),
+    blacklist: mergeById(local.blacklist, remote.blacklist, (row) => row),
+    logs: mergeById(local.logs, remote.logs, (row) => row)
+      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+      .slice(0, 400),
+    tables: mergeById(local.tables, remote.tables, (row) => row),
+  };
+}
+
+function parseRemoteStore(raw: unknown): StoreFile | null {
+  const parsed = typeof raw === "string" ? (JSON.parse(raw) as unknown) : raw;
+  if (!isStoreFile(parsed)) {
+    return null;
+  }
+  return hydrateStore(parsed);
+}
+
+/** Pull Neon into memory without dropping in-flight local rows. */
+export async function pullRemoteStore(): Promise<void> {
+  if (!usesRemoteStore()) {
+    return;
+  }
+  try {
+    const remote = parseRemoteStore(await loadRemoteStore());
+    if (!remote) {
+      return;
+    }
+    cache = cache ? overlayLocalOnRemote(remote, cache) : remote;
+    remoteError = null;
+  } catch (error) {
+    remoteError = error instanceof Error ? error.message : "Falha ao ler o Postgres";
+    console.error("[store] pullRemoteStore:", error);
+  }
+}
+
 export async function flushStore(): Promise<void> {
   if (!dirty || !cache) {
     return;
   }
   if (usesRemoteStore()) {
     try {
+      const remote = parseRemoteStore(await loadRemoteStore());
+      if (remote) {
+        cache = overlayLocalOnRemote(remote, cache);
+      }
       await saveRemoteStore(cache);
       remoteError = null;
       dirty = false;
@@ -1162,6 +1262,8 @@ export function createScrim(input: {
     mapImageUrl: template.mapImageUrl,
     matchCode: "",
     discord: null,
+    provisionStatus: "pending",
+    provisionError: null,
     drops: cloneDrops(template.drops),
     templateId: template.id,
     templateName: template.name,

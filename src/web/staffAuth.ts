@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { cookieOptions, clearCookieOptions, env } from "../env.js";
 import { discordRedirectUri } from "../scrims/links.js";
@@ -158,6 +158,21 @@ export async function isStaffSession(req: Request): Promise<boolean> {
     return false;
   }
   return memberHasAdminRole(token.slice("discord:".length));
+}
+
+/** Vercel → Railway kick to create Discord channels without waiting on the hobby 10s limit. */
+export function isBotInternalRequest(req: Request): boolean {
+  const sent = String(req.headers["x-bot-internal"] ?? "");
+  const expected = env.sessionSecret;
+  if (!sent || !expected) {
+    return false;
+  }
+  const left = Buffer.from(sent);
+  const right = Buffer.from(expected);
+  if (left.length !== right.length) {
+    return false;
+  }
+  return timingSafeEqual(left, right);
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {

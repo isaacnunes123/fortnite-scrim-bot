@@ -361,6 +361,28 @@ function Home({
     set(list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
   }
 
+  async function waitForDiscordLobby(id: string): Promise<void> {
+    const started = Date.now();
+    while (Date.now() - started < 90_000) {
+      const data = await api<{
+        scrim: ScrimSummary & { provisionStatus?: string; provisionError?: string | null };
+      }>(`/api/scrims/${id}`);
+      if (data.scrim.discord) {
+        return;
+      }
+      if (data.scrim.provisionStatus === "failed") {
+        throw new Error(
+          data.scrim.provisionError ||
+            "Não foi possível criar a categoria no Discord. Confira Gerenciar Canais e Gerenciar Cargos no cargo do bot.",
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    throw new Error(
+      "O Discord ainda está criando os canais. A scrim já foi gravada — atualize a página em alguns segundos.",
+    );
+  }
+
   async function onCreate(event: FormEvent) {
     event.preventDefault();
     if (!Number.isInteger(teamsPerDrop) || teamsPerDrop < 1 || teamsPerDrop > 20) {
@@ -388,6 +410,9 @@ function Home({
           templateId,
         }),
       });
+      if (!created.scrim.discord) {
+        await waitForDiscordLobby(created.scrim.id);
+      }
       setName("");
       await onCreated();
       onOpen(created.scrim.id);
@@ -685,6 +710,12 @@ function Home({
           <button className="btn" type="submit" disabled={saving || !status?.ready}>
             {saving ? "Criando no Discord…" : "Criar scrim no Discord"}
           </button>
+          {saving ? (
+            <p className="muted">
+              Criando a categoria e os canais no Discord. Isso pode levar até um minuto — o painel
+              não espera o Railway terminar.
+            </p>
+          ) : null}
         </form>
 
         <div>

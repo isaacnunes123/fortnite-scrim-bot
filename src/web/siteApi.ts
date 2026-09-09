@@ -9,6 +9,7 @@ import {
   ensureStore,
   flushStore,
   persistenceMode,
+  pullRemoteStore,
   storeRemoteError,
   createTable,
   createTemplate,
@@ -265,10 +266,49 @@ async function resolveBotStatus(local?: BotStatusPayload): Promise<BotStatusPayl
   );
 }
 
+const RAILWAY_DOWN_ERROR =
+  "O processo do bot no Railway não está no ar. Sem ele o Discord não cria a categoria (check-in, mapa, código, chat). Abra Railway → Deploy Logs e confira se /health volta JSON com host=bot. BOT_PROCESS_URL deve ser https://….up.railway.app sem barra no final.";
+
+function isCreateScrimPath(req: Request): boolean {
+  const path = String(req.path || req.url || "").split("?")[0] ?? "";
+  return req.method === "POST" && /^\/api\/scrims\/?$/.test(path);
+}
+
+function isRailwayDownPayload(status: number, body: string): boolean {
+  return status === 502 || status === 504 || /Application failed to respond/i.test(body);
+}
+
+const lastProvisionKick = new Map<string, number>();
+
+async function kickLobbyProvision(req: Request, scrimId: string): Promise<void> {
+  if (!env.botProcessUrl) {
+    return;
+  }
+  const now = Date.now();
+  if ((lastProvisionKick.get(scrimId) ?? 0) > now - 4000) {
+    return;
+  }
+  lastProvisionKick.set(scrimId, now);
+  const headers = new Headers({
+    "content-type": "application/json",
+    "x-bot-internal": env.sessionSecret,
+  });
+  if (req.headers.cookie) {
+    headers.set("cookie", req.headers.cookie);
+  }
+  await fetch(`${env.botProcessUrl}/api/scrims/${encodeURIComponent(scrimId)}/provision`, {
+    method: "POST",
+    headers,
+    body: "{}",
+    signal: AbortSignal.timeout(4000),
+  }).catch(() => undefined);
+}
+
 async function proxyToBotProcess(req: Request, res: Response): Promise<boolean> {
   if (!env.botProcessUrl) {
     return false;
   }
+  const createScrim = isCreateScrimPath(req);
   try {
     const url = new URL(req.originalUrl || req.url, `${env.botProcessUrl}/`);
     const headers = new Headers();
@@ -279,11 +319,14 @@ async function proxyToBotProcess(req: Request, res: Response): Promise<boolean> 
     if (contentType) {
       headers.set("content-type", contentType);
     }
+    if (createScrim) {
+      headers.set("x-bot-internal", env.sessionSecret);
+    }
     const init: RequestInit = {
       method: req.method,
       headers,
       redirect: "manual",
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.timeout(createScrim ? 8_000 : 12_000),
     };
     if (req.method !== "GET" && req.method !== "HEAD") {
       if (Buffer.isBuffer(req.body)) {
@@ -298,14 +341,29 @@ async function proxyToBotProcess(req: Request, res: Response): Promise<boolean> 
       }
     }
     const upstream = await fetch(url, init);
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    const text = buffer.toString("utf8");
+    if (isRailwayDownPayload(upstream.status, text)) {
+      res.status(503).json({ error: RAILWAY_DOWN_ERROR });
+      return true;
+    }
     res.status(upstream.status);
     const type = upstream.headers.get("content-type");
     if (type) {
       res.setHeader("Content-Type", type);
     }
-    res.send(Buffer.from(await upstream.arrayBuffer()));
+    res.send(buffer);
     return true;
-  } catch {
+  } catch (error) {
+    const name = error instanceof Error ? error.name : "";
+    if (name === "TimeoutError" || name === "AbortError") {
+      res.status(503).json({
+        error: createScrim
+          ? "O bot no Railway demorou para aceitar a criação. Se o Discord estiver verde, tente de novo em alguns segundos. Se persistir, veja Deploy Logs e /health."
+          : RAILWAY_DOWN_ERROR,
+      });
+      return true;
+    }
     return false;
   }
 }
@@ -615,7 +673,8 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
     },
   );
 
-  app.get("/api/scrims", requireAuth, (_req, res) => {
+  app.get("/api/scrims", requireAuth, async (_req, res) => {
+    await pullRemoteStore();
     const scrims = listScrims().map((scrim) => ({
       ...scrim,
       teamSize: MODE_SIZE[scrim.mode],
@@ -625,11 +684,19 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
     res.json({ scrims });
   });
 
-  app.get("/api/scrims/:id", requireAuth, (req, res) => {
-    const scrim = getScrim(String(req.params.id));
+  app.get("/api/scrims/:id", requireAuth, async (req, res) => {
+    await pullRemoteStore();
+    const id = String(req.params.id);
+    const scrim = getScrim(id);
     if (!scrim) {
+      if (await proxyToBotProcess(req, res)) {
+        return;
+      }
       res.status(404).json({ error: "Scrim não encontrada" });
       return;
+    }
+    if (scrim.provisionStatus === "pending" && !scrim.discord) {
+      void kickLobbyProvision(req, scrim.id);
     }
     const invites = listInvites(scrim.id);
     res.json({
@@ -801,6 +868,10 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
 
 export async function botUnavailable(req: Request, res: Response): Promise<void> {
   if (await proxyToBotProcess(req, res)) {
+    return;
+  }
+  if (isCreateScrimPath(req)) {
+    res.status(503).json({ error: RAILWAY_DOWN_ERROR });
     return;
   }
   res.status(503).json({ error: "Bot Discord offline" });

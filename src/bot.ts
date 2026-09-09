@@ -1,8 +1,8 @@
+import express from "express";
 import { startBot, getBotStatus } from "./bot/client.js";
 import { pulseBotHeartbeat, startBotHeartbeat } from "./bot/heartbeat.js";
 import { env } from "./env.js";
 import { ensureStore } from "./scrims/store.js";
-import { createWebApp } from "./web/app.js";
 
 /**
  * Processo 24/7 do Discord (gateway). Não publica o site.
@@ -12,7 +12,23 @@ import { createWebApp } from "./web/app.js";
  *   node dist/bot.js
  */
 async function main() {
-  const app = await createWebApp({ serveUi: false });
+  const app = express();
+  app.get("/health", (_req, res) => {
+    res.status(200).json({
+      ok: true,
+      service: "fortnite-scrim-bot",
+      host: "bot",
+      ...getBotStatus(),
+    });
+  });
+  app.get("/", (_req, res) => {
+    res.status(200).json({
+      ok: true,
+      service: "fortnite-scrim-bot",
+      host: "bot",
+      hint: "/health",
+    });
+  });
 
   await new Promise<void>((resolve, reject) => {
     const server = app.listen(env.port, "0.0.0.0", () => {
@@ -21,6 +37,9 @@ async function main() {
     });
     server.on("error", reject);
   });
+
+  const { createWebApp } = await import("./web/app.js");
+  await createWebApp({ serveUi: false, app });
 
   startBotHeartbeat(getBotStatus);
   pulseBotHeartbeat(getBotStatus());

@@ -1,3 +1,14 @@
+function requestErrorMessage(
+  data: { error?: string; message?: string },
+  status: number,
+): string {
+  const raw = data.error || data.message || "";
+  if (status === 502 || status === 504 || /Application failed to respond/i.test(raw)) {
+    return "O bot no Railway não está no ar. Sem ele o Discord não cria a categoria. Abra Railway → Deploy Logs e confira se /health volta JSON.";
+  }
+  return raw || "Falha na requisição";
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body != null && !headers.has("Content-Type")) {
@@ -14,9 +25,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     code?: number;
   };
   if (!response.ok) {
-    throw new Error(
-      data.error || data.message || "Falha na requisição",
-    );
+    throw new Error(requestErrorMessage(data, response.status));
   }
   return data;
 }
@@ -168,6 +177,8 @@ export type DiscordRole = {
   color: string;
 };
 
+export type ProvisionStatus = "pending" | "ready" | "failed";
+
 export type ScrimSummary = {
   id: string;
   name: string;
@@ -178,6 +189,9 @@ export type ScrimSummary = {
   inviteCount: number;
   teamCount: number;
   guildName?: string;
+  provisionStatus?: ProvisionStatus;
+  provisionError?: string | null;
+  discord?: { lobbyNumber: number; fillChatOpen: boolean } | null;
 };
 
 export type EmbedCopy = {
@@ -260,6 +274,8 @@ export type ScrimDetail = {
   maxContestedDrops?: number;
   embeds?: ScrimEmbeds;
   discord: { lobbyNumber: number; fillChatOpen: boolean } | null;
+  provisionStatus?: ProvisionStatus;
+  provisionError?: string | null;
   yuniteTournamentId?: string;
 };
 

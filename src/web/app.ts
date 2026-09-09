@@ -14,7 +14,7 @@ import {
 } from "../scrims/maps.js";
 import { saveYuniteTournamentId } from "./publicTables.js";
 import { resolveMapAccess } from "./dropAuth.js";
-import { isStaffSession } from "./staffAuth.js";
+import { isBotInternalRequest, isStaffSession } from "./staffAuth.js";
 import {
   fail,
   parseWindows,
@@ -31,6 +31,7 @@ import {
   deleteScrim,
   ensureScrimHasDrops,
   findDropAt,
+  flushStore,
   getActiveBan,
   getScrim,
   getTemplate,
@@ -39,14 +40,17 @@ import {
   MODE_SIZE,
   normalizeDrop,
   patchScrim,
+  pullRemoteStore,
   removeInvite,
   teamCount,
 } from "../scrims/store.js";
 import {
   applyPlayerDrop,
+  assertBotCanProvision,
+  beginLobbyProvision,
   ensureDropMapEmbed,
+  explainDiscordError,
   postMatchCode,
-  provisionLobby,
   refreshLeaveMessage,
   refreshRegistrationMessage,
   setDropMarkingOpen,
@@ -57,9 +61,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export async function createWebApp(options: { serveUi?: boolean } = {}) {
-  const app = express();
-  const host = options.serveUi === false ? "bot" : "node";
+export function registerBotHealth(app: express.Express, host: "bot" | "node" = "bot"): void {
   app.get("/health", (_req, res) => {
     res.status(200).json({
       ok: true,
@@ -68,7 +70,7 @@ export async function createWebApp(options: { serveUi?: boolean } = {}) {
       ...getBotStatus(),
     });
   });
-  if (options.serveUi === false) {
+  if (host === "bot") {
     app.get("/", (_req, res) => {
       res.status(200).json({
         ok: true,
@@ -77,6 +79,14 @@ export async function createWebApp(options: { serveUi?: boolean } = {}) {
         hint: "/health",
       });
     });
+  }
+}
+
+export async function createWebApp(options: { serveUi?: boolean; app?: express.Express } = {}) {
+  const app = options.app ?? express();
+  const host = options.serveUi === false ? "bot" : "node";
+  if (!options.app) {
+    registerBotHealth(app, host);
   }
   setupExpress(app);
   app.use("/uploads", express.static(uploadDir));
@@ -155,8 +165,52 @@ export async function createWebApp(options: { serveUi?: boolean } = {}) {
 
   registerSiteRoutes(app, { botStatus: getBotStatus });
 
+  async function canManageScrims(req: express.Request): Promise<boolean> {
+    return (await isStaffSession(req)) || isBotInternalRequest(req);
+  }
+
+  app.post("/api/scrims/:id/provision", async (req, res) => {
+    if (!(await canManageScrims(req))) {
+      res.status(401).json({ error: "Não autenticado" });
+      return;
+    }
+    const client = getDiscordClient();
+    if (!client?.isReady()) {
+      res.status(503).json({ error: "Bot Discord offline" });
+      return;
+    }
+    await pullRemoteStore();
+    const scrim = getScrim(String(req.params.id));
+    if (!scrim) {
+      res.status(404).json({ error: "Scrim não encontrada" });
+      return;
+    }
+    if (scrim.discord && scrim.provisionStatus === "ready") {
+      res.status(200).json({ scrim, accepted: true });
+      return;
+    }
+    const guild = getGuild(client, scrim.guildId);
+    if (!guild) {
+      res.status(400).json({ error: `O bot precisa estar no servidor ${env.discordGuildId}.` });
+      return;
+    }
+    try {
+      await assertBotCanProvision(guild, client);
+    } catch (error) {
+      const message = explainDiscordError(error);
+      patchScrim(scrim.id, { provisionStatus: "failed", provisionError: message });
+      await flushStore().catch(() => undefined);
+      res.status(400).json({ error: message, scrim: getScrim(scrim.id) });
+      return;
+    }
+    patchScrim(scrim.id, { provisionStatus: "pending", provisionError: null });
+    await flushStore().catch(() => undefined);
+    beginLobbyProvision(client, scrim);
+    res.status(202).json({ scrim: getScrim(scrim.id), accepted: true });
+  });
+
   app.post("/api/scrims", async (req, res) => {
-    if (!(await isStaffSession(req))) {
+    if (!(await canManageScrims(req))) {
       res.status(401).json({ error: "Não autenticado" });
       return;
     }
@@ -183,6 +237,12 @@ export async function createWebApp(options: { serveUi?: boolean } = {}) {
       res.status(400).json({
         error: `O bot precisa estar no servidor ${env.discordGuildId}.`,
       });
+      return;
+    }
+    try {
+      await assertBotCanProvision(clientGuild, client);
+    } catch (error) {
+      fail(res, error, explainDiscordError(error));
       return;
     }
     if (!name) {
@@ -230,10 +290,11 @@ export async function createWebApp(options: { serveUi?: boolean } = {}) {
         teamsPerDrop,
         maxContestedDrops,
       });
-      const scrim = await provisionLobby(client, created);
-      res.status(201).json({ scrim });
+      await flushStore();
+      beginLobbyProvision(client, created);
+      res.status(202).json({ scrim: created, accepted: true });
     } catch (error) {
-      fail(res, error, "Não foi possível criar a categoria no Discord");
+      fail(res, error, explainDiscordError(error));
     }
   });
 
