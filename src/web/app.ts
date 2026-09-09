@@ -46,6 +46,7 @@ import {
   isScrimMode,
   listBlacklist,
   listInvites,
+  removeBlacklist,
   listLogs,
   listScrimPresets,
   listScrims,
@@ -383,6 +384,15 @@ export async function createWebApp() {
 
   app.get("/api/blacklist", requireAuth, (_req, res) => {
     res.json({ blacklist: listBlacklist() });
+  });
+
+  app.delete("/api/blacklist/:id", requireAuth, (req, res) => {
+    const entry = removeBlacklist(String(req.params.id));
+    if (!entry) {
+      res.status(404).json({ error: "Entrada não encontrada" });
+      return;
+    }
+    res.json({ ok: true, entry });
   });
 
   app.post("/api/scrims", requireAuth, async (req, res) => {
@@ -725,6 +735,7 @@ export async function createWebApp() {
         displayName: player.displayName,
         teamName: String(req.body?.teamName ?? ""),
         fortniteNick: String(req.body?.fortniteNick ?? ""),
+        ignoreCooldown: true,
       });
       const dmSent = await notifyInvite(client, {
         discordUserId: player.id,

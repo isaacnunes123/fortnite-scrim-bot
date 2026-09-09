@@ -190,6 +190,22 @@ function storeFilePath(): string {
 }
 
 let cache: StoreFile | null = null;
+const CHECKIN_COOLDOWN_MS = 90_000;
+const reentryUntil = new Map<string, number>();
+
+export function setCheckinCooldown(discordUserId: string, ms = CHECKIN_COOLDOWN_MS): void {
+  reentryUntil.set(discordUserId, Date.now() + ms);
+}
+
+export function remainingCheckinCooldown(discordUserId: string): number {
+  const until = reentryUntil.get(discordUserId) ?? 0;
+  const left = Math.ceil((until - Date.now()) / 1000);
+  if (left <= 0) {
+    reentryUntil.delete(discordUserId);
+    return 0;
+  }
+  return left;
+}
 
 function defaultTemplates(): MapTemplate[] {
   return [
@@ -243,7 +259,7 @@ export function defaultEmbeds(): ScrimEmbeds {
       color: "#ff5c5c",
       footer: "{name}",
       description:
-        "Saída livre até **{leaveUntil}** (horário de Brasília).\nSe você confirmar a saída **depois** desse horário, entra na **blacklist da closed** por **{punishHours}h** e não faz check-in até acabar a punição.",
+        "Saída livre até **{leaveUntil}** (horário de Brasília).\nSe você confirmar a saída **depois** desse horário, entra na **blacklist da closed** por **{punishHours}h** e não faz check-in até acabar a punição.\nAo sair, o drop é liberado. Fora da punição, espere **90 segundos** para fazer check-in de novo.",
     },
     code: {
       title: "Código da partida",
@@ -496,12 +512,7 @@ function readDisk(): StoreFile {
       mapPresetsPath(dataDir()),
       [],
     ).map(normalizeTemplate);
-    const templates = mergeTemplates([
-      defaultTemplates(),
-      repoTemplates,
-      dataTemplates,
-      storeTemplates,
-    ]);
+    const templates = mergeTemplates([repoTemplates, dataTemplates, storeTemplates]);
     const storeScrimPresets = Array.isArray(parsed.scrimPresets)
       ? parsed.scrimPresets.map(normalizeScrimPreset)
       : [];
@@ -552,28 +563,92 @@ function getStore(): StoreFile {
 
 function persist(): void {
   const store = getStore();
-  store.templates = mergeTemplates([
-    readJsonFile<MapTemplate[]>(mapPresetsPath(dataDir()), []),
-    readJsonFile<MapTemplate[]>(mapPresetsPath(repoPresetsDir()), []),
-    store.templates,
-  ]);
-  store.scrimPresets = mergeLast([
-    readJsonFile<ScrimPreset[]>(scrimPresetsPath(dataDir()), []),
-    readJsonFile<ScrimPreset[]>(scrimPresetsPath(repoPresetsDir()), []),
-    store.scrimPresets,
-  ]);
+  const diskMaps = readJsonFile<MapTemplate[]>(mapPresetsPath(dataDir()), []);
+  const repoMaps = readJsonFile<MapTemplate[]>(mapPresetsPath(repoPresetsDir()), []);
+  store.templates = preserveTemplateDrops(store.templates, diskMaps, repoMaps);
+  const diskScrims = readJsonFile<ScrimPreset[]>(scrimPresetsPath(dataDir()), []);
+  const repoScrims = readJsonFile<ScrimPreset[]>(scrimPresetsPath(repoPresetsDir()), []);
+  if (store.scrimPresets.length === 0) {
+    store.scrimPresets = mergeLast([diskScrims, repoScrims]);
+  }
   const filePath = storeFilePath();
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmp = `${filePath}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(store, null, 2));
-  fs.renameSync(tmp, filePath);
-  tryWriteJsonFile(mapPresetsPath(dataDir()), store.templates);
-  tryWriteJsonFile(scrimPresetsPath(dataDir()), store.scrimPresets);
+  if (canReplaceStoreFile(filePath, store)) {
+    const tmp = `${filePath}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(store, null, 2));
+    fs.renameSync(tmp, filePath);
+  }
+  const nextMapDrops = store.templates.reduce((n, item) => n + item.drops.length, 0);
+  const diskMapDrops = diskMaps.reduce(
+    (n, item) => n + (Array.isArray(item.drops) ? item.drops.length : 0),
+    0,
+  );
+  if (store.templates.length > 0 && (nextMapDrops > 0 || diskMapDrops === 0)) {
+    tryWriteJsonFile(mapPresetsPath(dataDir()), store.templates);
+  }
+  if (store.scrimPresets.length > 0) {
+    tryWriteJsonFile(scrimPresetsPath(dataDir()), store.scrimPresets);
+  }
   if (store.templates.some((item) => item.drops.length > 0)) {
     tryWriteJsonFile(mapPresetsPath(repoPresetsDir()), store.templates);
   }
-  tryWriteJsonFile(scrimPresetsPath(repoPresetsDir()), store.scrimPresets);
+  if (store.scrimPresets.length > 0) {
+    tryWriteJsonFile(scrimPresetsPath(repoPresetsDir()), store.scrimPresets);
+  }
   publish({ type: "store" });
+}
+
+function preserveTemplateDrops(
+  memory: MapTemplate[],
+  disk: MapTemplate[],
+  repo: MapTemplate[],
+): MapTemplate[] {
+  const fallback = mergeTemplates([disk, repo]);
+  if (memory.length === 0) {
+    return fallback;
+  }
+  const byId = new Map(fallback.map((item) => [item.id, item]));
+  return memory.map((item) => {
+    const previous = byId.get(item.id);
+    if (previous && item.drops.length === 0 && previous.drops.length > 0) {
+      return normalizeTemplate({
+        ...item,
+        drops: previous.drops,
+        mapImageUrl: item.mapImageUrl?.trim() ? item.mapImageUrl : previous.mapImageUrl,
+      });
+    }
+    return item;
+  });
+}
+
+function storeRecordCount(file: {
+  scrims?: unknown[];
+  invites?: unknown[];
+  blacklist?: unknown[];
+  logs?: unknown[];
+  templates?: unknown[];
+  scrimPresets?: unknown[];
+}): number {
+  return (
+    (file.scrims?.length ?? 0) +
+    (file.invites?.length ?? 0) +
+    (file.blacklist?.length ?? 0) +
+    (file.logs?.length ?? 0) +
+    (file.templates?.length ?? 0) +
+    (file.scrimPresets?.length ?? 0)
+  );
+}
+
+function canReplaceStoreFile(filePath: string, next: StoreFile): boolean {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return true;
+    }
+    const existing = JSON.parse(fs.readFileSync(filePath, "utf-8")) as StoreFile;
+    return storeRecordCount(existing) === 0 || storeRecordCount(next) > 0;
+  } catch {
+    return true;
+  }
 }
 
 export function addLog(input: {
@@ -898,6 +973,7 @@ export function addInvite(input: {
   displayName: string;
   teamName: string;
   fortniteNick: string;
+  ignoreCooldown?: boolean;
 }): Invite {
   const store = getStore();
   const scrim = store.scrims.find((item) => item.id === input.scrimId);
@@ -914,6 +990,14 @@ export function addInvite(input: {
     throw new Error("Informe o nick do Fortnite");
   }
   const now = Date.now();
+  if (!input.ignoreCooldown) {
+    const wait = remainingCheckinCooldown(input.discordUserId);
+    if (wait > 0) {
+      throw new Error(
+        `Espere ${wait}s para fazer check-in de novo. Isso evita spam se você saiu sem querer.`,
+      );
+    }
+  }
   if (
     store.blacklist.some(
       (entry) =>
@@ -970,15 +1054,42 @@ export function addInvite(input: {
   return invite;
 }
 
+export function clearPlayerDrop(scrimId: string, discordUserId: string, teamName: string): void {
+  const store = getStore();
+  const scrim = store.scrims.find((item) => item.id === scrimId);
+  if (!scrim) {
+    return;
+  }
+  const teamStillIn = store.invites.some(
+    (invite) =>
+      invite.scrimId === scrimId &&
+      invite.teamName === teamName &&
+      invite.discordUserId !== discordUserId,
+  );
+  for (const drop of scrim.drops) {
+    const claims = listDropClaims(drop).filter((claim) => {
+      if (claim.userId && claim.userId === discordUserId) {
+        return false;
+      }
+      if (!teamStillIn && claim.teamName === teamName) {
+        return false;
+      }
+      return true;
+    });
+    applyClaims(drop, claims);
+  }
+}
+
 export function removeInvite(scrimId: string, inviteId: string): boolean {
   const store = getStore();
-  const before = store.invites.length;
-  store.invites = store.invites.filter(
-    (invite) => !(invite.scrimId === scrimId && invite.id === inviteId),
+  const invite = store.invites.find(
+    (item) => item.scrimId === scrimId && item.id === inviteId,
   );
-  if (store.invites.length === before) {
+  if (!invite) {
     return false;
   }
+  clearPlayerDrop(scrimId, invite.discordUserId, invite.teamName);
+  store.invites = store.invites.filter((item) => item.id !== invite.id);
   persist();
   return true;
 }
@@ -991,7 +1102,9 @@ export function removePlayer(scrimId: string, discordUserId: string): Invite | n
   if (!invite) {
     return null;
   }
+  clearPlayerDrop(scrimId, discordUserId, invite.teamName);
   store.invites = store.invites.filter((item) => item.id !== invite.id);
+  setCheckinCooldown(discordUserId);
   persist();
   addLog({
     scrimId,
@@ -1159,6 +1272,23 @@ export function addBlacklist(input: {
     kind: "blacklist",
     summary: `${input.displayName} entrou na blacklist`,
     detail: `Nick ${input.fortniteNick} · ${input.hours}h · ${input.reason}`,
+  });
+  return entry;
+}
+
+export function removeBlacklist(id: string): BlacklistEntry | null {
+  const store = getStore();
+  const entry = store.blacklist.find((item) => item.id === id) ?? null;
+  if (!entry) {
+    return null;
+  }
+  store.blacklist = store.blacklist.filter((item) => item.id !== id);
+  persist();
+  addLog({
+    scrimId: entry.scrimId,
+    kind: "blacklist",
+    summary: `${entry.displayName} saiu da blacklist`,
+    detail: `Removido pela staff · nick ${entry.fortniteNick} · ID ${entry.discordUserId}`,
   });
   return entry;
 }

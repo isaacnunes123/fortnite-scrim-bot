@@ -20,6 +20,7 @@ import {
   getActiveBan,
   getScrim,
   listInvites,
+  remainingCheckinCooldown,
   removePlayer,
   teamCount,
 } from "../scrims/store.js";
@@ -105,6 +106,14 @@ async function onRegisterButton(
     });
     await interaction.reply({
       content: `Você está na blacklist da closed até **${until}** (nick **${ban.fortniteNick}**). Check-in bloqueado.`,
+      ephemeral: true,
+    });
+    return;
+  }
+  const wait = remainingCheckinCooldown(member.id);
+  if (wait > 0) {
+    await interaction.reply({
+      content: `Você saiu há pouco. Espere **${wait}s** para fazer check-in de novo (evita saída sem querer).`,
       ephemeral: true,
     });
     return;
@@ -282,8 +291,14 @@ async function completeLeave(
       scrim.discord.registeredRoleId,
       scrim.discord.confirmedRoleId,
     ]);
+    const live = getScrim(scrim.id);
+    if (live) {
+      await syncLobbyAccess(client, live).catch(() => undefined);
+    }
   }
+  await ensureDropMapEmbed(client, getScrim(scrim.id) ?? scrim);
   await refreshRegistrationMessage(client, scrim.id);
+  const wait = remainingCheckinCooldown(member.id);
 
   if (punish) {
     const entry = addBlacklist({
@@ -307,14 +322,14 @@ async function completeLeave(
     }
     await replyLeave(
       interaction,
-      `Saída confirmada. Você está na blacklist da closed até **${until}**.`,
+      `Saída confirmada. Seu drop foi liberado. Você está na blacklist da closed até **${until}**.`,
     );
     return;
   }
 
   await replyLeave(
     interaction,
-    `Você saiu da scrim dentro do horário (${scrim.leaveUntil}). Sem punição.`,
+    `Você saiu da scrim dentro do horário (${scrim.leaveUntil}). Sem punição. Drop liberado. Espere **${wait || 90}s** para fazer check-in de novo.`,
   );
 }
 
@@ -423,6 +438,7 @@ async function onFillDecision(
       displayName: member.displayName,
       teamName: member.displayName.slice(0, 32),
       fortniteNick: member.displayName,
+      ignoreCooldown: true,
     });
     await giveRole(member, scrim.discord.registeredRoleId);
     await ensureDropMapEmbed(client, getScrim(scrim.id) ?? scrim);

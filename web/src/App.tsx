@@ -305,7 +305,21 @@ function Home({
   async function loadLogs() {
     const feed = await api<{ logs: ActivityLog[] }>("/api/logs").catch(() => ({ logs: [] }));
     setLogs(feed.logs ?? []);
+    const banned = await api<{ blacklist: BlacklistEntry[] }>("/api/blacklist").catch(() => ({
+      blacklist: [],
+    }));
+    setBlacklist(banned.blacklist ?? []);
     await onCreated().catch(() => undefined);
+  }
+
+  async function removeBan(id: string) {
+    try {
+      await api(`/api/blacklist/${id}`, { method: "DELETE" });
+      const data = await api<{ blacklist: BlacklistEntry[] }>("/api/blacklist");
+      setBlacklist(data.blacklist);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível remover da blacklist");
+    }
   }
 
   useLiveReload(() => {
@@ -673,22 +687,32 @@ function Home({
           <h2 style={{ marginTop: 0 }}>Blacklist da closed</h2>
           <p className="muted">
             Quem saiu depois do horário. Check-in bloqueado até acabar a punição.
+            A staff pode remover a qualquer momento.
           </p>
           {blacklist.length === 0 ? (
             <p className="muted">Ninguém na blacklist agora.</p>
           ) : (
-            <ul className="scrim-list">
+            <ul className="blacklist-list">
               {blacklist.map((entry) => (
-                <li key={entry.id}>
-                  <strong>
-                    {entry.fortniteNick} · {entry.displayName}
-                  </strong>
-                  <span>
-                    ID {entry.discordUserId} · até{" "}
-                    {new Date(entry.expiresAt).toLocaleString("pt-BR", {
-                      timeZone: "America/Sao_Paulo",
-                    })}
-                  </span>
+                <li className="blacklist-row" key={entry.id}>
+                  <div>
+                    <strong>
+                      {entry.fortniteNick} · {entry.displayName}
+                    </strong>
+                    <span>
+                      ID {entry.discordUserId} · até{" "}
+                      {new Date(entry.expiresAt).toLocaleString("pt-BR", {
+                        timeZone: "America/Sao_Paulo",
+                      })}
+                    </span>
+                  </div>
+                  <button
+                    className="btn secondary"
+                    type="button"
+                    onClick={() => void removeBan(entry.id)}
+                  >
+                    Remover
+                  </button>
                 </li>
               ))}
             </ul>
@@ -903,8 +927,9 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           required
         />
         <p className="muted">
-          Até este momento o player pode sair sem punição. Depois, se sair, entra na blacklist
-          da closed pelo tempo abaixo.
+          Até este momento o player pode sair sem punição: o drop é liberado na hora e ele
+          espera 90 segundos para fazer check-in de novo. Depois do horário, se sair, entra na
+          blacklist da closed pelo tempo abaixo.
         </p>
         <label htmlFor="punishHours">Ban da closed se sair depois (horas)</label>
         <input
