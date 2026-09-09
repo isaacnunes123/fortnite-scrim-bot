@@ -239,7 +239,6 @@ export const TABLE_DIVISION_TABS: Array<{ id: TableDivisionTab; label: string }>
   { id: "divisao-2", label: "Divisão 2" },
   { id: "divisao-1-pro", label: "Divisão 1 e Pro" },
   { id: "endgame", label: "Endgame" },
-  { id: "closed", label: "Closed" },
 ];
 
 export const ENDGAME_SUB_TABS: Array<{

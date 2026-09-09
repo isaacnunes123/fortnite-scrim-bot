@@ -204,20 +204,22 @@ function BoardList({ search }: { search: string }) {
 
       {error ? <p className="error">{error}</p> : null}
 
-      <div className="boards-divs" role="tablist" aria-label="Divisões">
-        {TABLE_DIVISION_TABS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === item.id}
-            className={`boards-div ${tab === item.id ? "on" : ""}`}
-            onClick={() => selectTab(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      {tab !== "closed" ? (
+        <div className="boards-divs" role="tablist" aria-label="Divisões">
+          {TABLE_DIVISION_TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === item.id}
+              className={`boards-div ${tab === item.id ? "on" : ""}`}
+              onClick={() => selectTab(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {tab === "endgame" ? (
         <div className="boards-subnav" role="tablist" aria-label="Endgame">
