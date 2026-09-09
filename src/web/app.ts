@@ -7,7 +7,7 @@ import { getBotStatus, getDiscordClient } from "../bot/client.js";
 import { getGuild, listBotGuilds, notifyInvite, resolveDiscordPlayer, rosterForScrim } from "../bot/guild.js";
 import { subscribe } from "../scrims/live.js";
 import { cookieOptions, clearCookieOptions, env } from "../env.js";
-import { discordRedirectUri, publicBaseUrl } from "../scrims/links.js";
+import { discordRedirectUri, isAllowedPublicHost, publicBaseUrl } from "../scrims/links.js";
 import { DEFAULT_MAP_URL, resolvePublicMapUrl, savePresetMap, saveUploadedMap, uploadDir } from "../scrims/maps.js";
 import {
   beginDiscordLogin,
@@ -147,6 +147,21 @@ export async function createWebApp() {
   const app = express();
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
+  app.use((req, res, next) => {
+    const origin = String(req.headers.origin ?? "").trim();
+    if (origin && isAllowedPublicHost(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+      res.setHeader("Vary", "Origin");
+    }
+    if (req.method === "OPTIONS") {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
   app.use(express.json({ limit: "8mb" }));
   app.use(cookieParser(env.sessionSecret));
   app.use("/uploads", express.static(uploadDir));

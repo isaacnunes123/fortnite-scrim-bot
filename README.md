@@ -32,35 +32,38 @@ npm run dev
 
 Sem `DISCORD_TOKEN` o site ainda abre; o card do bot fica offline até o token estar certo.
 
-## Produção (host)
+## Produção
 
-O mesmo processo serve o site e o bot:
+São dois hosts, de propósito:
 
-```bash
-npm install
-npm run build
-set NODE_ENV=production
-npm start
-```
+- **Vercel** (`buildscrims.online`) — só o site React (Vite). Não roda o bot Discord.
+- **Railway** (`handsome-curiosity`) — bot Discord + API Express (`/api`, `/tabelas` via proxy).
 
-A host precisa expor a porta (`PORT`, padrão `3000`) e ter as variáveis do `.env`.
+O `npm start` (`node dist/index.js`) é o processo Node. A Vercel **não** deve publicar essa pasta. Se o domínio mostrar código-fonte preto (`startBot` / `createWebApp`), o Output Directory está em `dist` em vez de `dist/public`.
 
-## Domínio próprio (Railway)
+## Domínio próprio (Vercel + Railway)
 
-O frontend usa caminhos relativos (`/api/...`, `/painel`). Um único build serve o endereço Railway e o domínio comprado.
+O frontend usa caminhos relativos (`/api/...`, `/tabelas`). A Vercel serve o HTML/JS e faz rewrite de `/api` para o Railway.
 
-1. No Railway do projeto **handsome-curiosity** → serviço → **Settings → Networking → Custom Domain**, ou no CLI: `railway domain seudominio.com`.
-2. No DNS do registrador, crie **os dois** records que o Railway mostrar (CNAME/ALIAS + TXT de verificação). Sem o TXT o domínio fica em 404.
-3. Variáveis no Railway (sem barra no final):
-   - `PUBLIC_BASE_URL=https://seudominio.com`
-   - opcional: `DISCORD_REDIRECT_URI=https://seudominio.com/api/auth/discord/callback`
-   - opcional: `PUBLIC_HOSTS=www.seudominio.com`
-4. Discord Developer Portal → OAuth2 → Redirects, adicione:
-   - `https://seudominio.com/api/auth/discord/callback`
+1. Na Vercel → projeto → **Settings → Build & Development**:
+   - Framework Preset: **Vite**
+   - Build Command: `npx vite build`
+   - Output Directory: **`dist/public`** (nunca `dist`)
+   - Root Directory: raiz do repo
+2. DNS no registrador (Hostinger etc.), apontando para a Vercel:
+   - A `@` → `76.76.21.21`
+   - CNAME `www` → `cname.vercel-dns.com` (ou o que a Vercel mostrar)
+3. Na Vercel → **Domains**, o domínio `buildscrims.online` fica neste projeto. Não precisa (e não deve) apontar o domínio no Railway.
+4. Variáveis no **Railway** (o backend que executa OAuth e o bot):
+   - `PUBLIC_BASE_URL=https://buildscrims.online`
+   - opcional: `DISCORD_REDIRECT_URI=https://buildscrims.online/api/auth/discord/callback`
+   - opcional: `PUBLIC_HOSTS=www.buildscrims.online,fortnite-scrim-bot.vercel.app`
+5. Discord Developer Portal → OAuth2 → Redirects, cadastre:
+   - `https://buildscrims.online/api/auth/discord/callback`
    - mantenha também `https://handsome-curiosity-production-48d3.up.railway.app/api/auth/discord/callback` se ainda for usar o link Railway
-5. Confira em `/api/health` se `publicBaseUrl` e `discordRedirectUri` batem com o domínio.
+6. Confira `https://buildscrims.online/api/health` (proxy) e a homepage **BUILD CLOSED**, não um arquivo `.js`.
 
-Com Docker:
+Com Docker (só o backend Railway):
 
 ```bash
 docker build -t fortnite-scrim-bot .

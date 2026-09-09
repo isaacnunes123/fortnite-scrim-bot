@@ -1,9 +1,8 @@
-# Domínio próprio: Settings → Networking → Custom Domain
-# ou `railway domain seudominio.com` (mostra CNAME + TXT).
-# Depois no Railway Variables:
-#   PUBLIC_BASE_URL=https://seudominio.com
+# Site público: Vercel (buildscrims.online) serve o Vite e faz proxy de /api para este serviço.
+# No Railway Variables:
+#   PUBLIC_BASE_URL=https://buildscrims.online
 # Discord OAuth2 Redirect:
-#   https://seudominio.com/api/auth/discord/callback
+#   https://buildscrims.online/api/auth/discord/callback
 
 [build]
 builder = "DOCKERFILE"

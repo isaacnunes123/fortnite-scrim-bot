@@ -62,6 +62,12 @@ export function isAllowedPublicHost(host: string): boolean {
   if (hostname.endsWith(".up.railway.app") || hostname.endsWith(".railway.app")) {
     return true;
   }
+  if (hostname.endsWith(".vercel.app")) {
+    return true;
+  }
+  if (hostname === "buildscrims.online" || hostname === "www.buildscrims.online") {
+    return true;
+  }
   return configuredPublicOrigins().some((origin) => {
     const allowed = hostnameOf(origin);
     return Boolean(allowed) && (hostname === allowed || hostname === `www.${allowed}` || `www.${hostname}` === allowed);
@@ -88,17 +94,22 @@ export function publicOriginForRequest(req?: HostRequest): string {
 }
 
 export function discordRedirectUri(req?: HostRequest): string {
-  if (req) {
-    const incoming = requestOrigin(req);
-    if (incoming && isAllowedPublicHost(incoming)) {
-      return `${incoming}/api/auth/discord/callback`;
-    }
-  }
   const explicit = stripSlash(process.env.DISCORD_REDIRECT_URI ?? "");
   if (explicit) {
     return explicit.endsWith("/api/auth/discord/callback")
       ? explicit
       : `${explicit}/api/auth/discord/callback`;
+  }
+  const configured = stripSlash(process.env.PUBLIC_BASE_URL ?? "");
+  if (configured) {
+    const origin = configured.includes("://") ? configured : `https://${configured}`;
+    return `${origin}/api/auth/discord/callback`;
+  }
+  if (req) {
+    const incoming = requestOrigin(req);
+    if (incoming && isAllowedPublicHost(incoming)) {
+      return `${incoming}/api/auth/discord/callback`;
+    }
   }
   return `${publicBaseUrl()}/api/auth/discord/callback`;
 }
