@@ -676,10 +676,12 @@ select:focus {
   background: #071018;
 }
 
-.map-board > canvas.map-art {
+.map-board > img.map-art {
   display: block;
   width: 100%;
   height: auto;
+  pointer-events: none;
+  image-rendering: auto;
 }
 
 .map-overlay {

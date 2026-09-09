@@ -235,7 +235,7 @@ export async function createWebApp() {
     requireAuth,
     express.raw({
       type: ["image/png", "image/jpeg", "image/webp", "application/octet-stream"],
-      limit: "12mb",
+      limit: "32mb",
     }),
     (req, res) => {
       const template = getTemplate(String(req.params.id));
@@ -549,7 +549,7 @@ export async function createWebApp() {
     requireAuth,
     express.raw({
       type: ["image/png", "image/jpeg", "image/webp", "application/octet-stream"],
-      limit: "12mb",
+      limit: "32mb",
     }),
     (req, res) => {
       const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from([]);
@@ -568,7 +568,7 @@ export async function createWebApp() {
     requireAuth,
     express.raw({
       type: ["image/png", "image/jpeg", "image/webp", "application/octet-stream"],
-      limit: "12mb",
+      limit: "32mb",
     }),
     (req, res) => {
       const scrim = getScrim(String(req.params.id));

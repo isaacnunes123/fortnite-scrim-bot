@@ -12,6 +12,7 @@ import {
 
 const DEFAULT_MAP = "/maps/island.png";
 const MIN_ZOOM = 1;
+const MAX_ZOOM = 10;
 
 function nextDropName(drops: DropSpot[]): string {
   let max = 0;
@@ -54,11 +55,10 @@ export function MapBoard({
   const src = imageUrl || DEFAULT_MAP;
   const viewportRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const mapImageRef = useRef<HTMLImageElement | null>(null);
   const zoomRef = useRef(1);
   const panRef = useRef({ x: 0, y: 0 });
-  const maxZoomRef = useRef(2);
+  const maxZoomRef = useRef(MAX_ZOOM);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef<{ dist: number; zoom: number } | null>(null);
   const dragRef = useRef<{
@@ -72,45 +72,21 @@ export function MapBoard({
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [maxZoom, setMaxZoom] = useState(2);
 
-  function paintMap() {
-    const canvas = canvasRef.current;
+  function syncViewLimits() {
     const image = mapImageRef.current;
     const viewport = viewportRef.current;
-    if (!canvas || !image?.naturalWidth || !viewport?.clientWidth) {
+    if (!image?.naturalWidth || !viewport?.clientWidth) {
       return;
     }
-    const z = zoomRef.current;
-    const cssW = viewport.clientWidth * z;
-    const cssH = (image.naturalHeight / image.naturalWidth) * cssW;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const pixelW = Math.max(1, Math.round(cssW * dpr));
-    const pixelH = Math.max(1, Math.round(cssH * dpr));
-    if (canvas.width !== pixelW || canvas.height !== pixelH) {
-      canvas.width = pixelW;
-      canvas.height = pixelH;
-    }
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      return;
-    }
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.clearRect(0, 0, pixelW, pixelH);
-    ctx.drawImage(image, 0, 0, pixelW, pixelH);
     if (window.innerWidth > 720) {
       viewport.style.aspectRatio = `${image.naturalWidth} / ${image.naturalHeight}`;
     } else {
       viewport.style.aspectRatio = "unset";
     }
-    const nativeFit = image.naturalWidth / viewport.clientWidth;
-    const nextMax = Math.min(6, Math.max(1.6, nativeFit * 1.08));
-    if (Math.abs(nextMax - maxZoomRef.current) > 0.02) {
-      maxZoomRef.current = nextMax;
-      setMaxZoom(nextMax);
-    } else {
-      maxZoomRef.current = nextMax;
+    maxZoomRef.current = MAX_ZOOM;
+    if (zoomRef.current > MAX_ZOOM) {
+      setView(MAX_ZOOM, panRef.current);
     }
   }
 
@@ -119,7 +95,7 @@ export function MapBoard({
     image.decoding = "async";
     image.onload = () => {
       mapImageRef.current = image;
-      paintMap();
+      syncViewLimits();
       window.setTimeout(() => fitPhoneIfNeeded(), 40);
     };
     image.src = src;
@@ -129,15 +105,11 @@ export function MapBoard({
   }, [src]);
 
   useEffect(() => {
-    paintMap();
-  }, [zoom]);
-
-  useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) {
       return;
     }
-    const ro = new ResizeObserver(() => paintMap());
+    const ro = new ResizeObserver(() => syncViewLimits());
     ro.observe(viewport);
     return () => ro.disconnect();
   }, [src]);
@@ -420,7 +392,13 @@ export function MapBoard({
               ref={boardRef}
               className={`map-board ${play ? "play" : ""} ${zoom >= 1.2 ? "zoomed" : ""}`}
             >
-              <canvas className="map-art" ref={canvasRef} />
+              <img
+                className="map-art"
+                src={src}
+                alt=""
+                draggable={false}
+                decoding="async"
+              />
               <svg className="map-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
                 {drops.map((drop) =>
                   drop.vertices.length >= 3 ? (

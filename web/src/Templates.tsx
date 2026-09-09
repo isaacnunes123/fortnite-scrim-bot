@@ -245,7 +245,9 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
                 />
                 <p className="muted">
                   Desenhe os drops no mapa (eles são numerados na ordem). Use uma imagem limpa da
-                  ilha, sem print da HUD do Fortnite. Nas scrims você só escolhe este preset.
+                  ilha, sem print da HUD. Para o zoom ficar nítido como no Copilot, use PNG ou
+                  WebP de 3000px ou mais (não um print da tela). Nas scrims você só escolhe este
+                  preset.
                 </p>
                 {saved ? <p className="ok-text">{saved}</p> : null}
                 {dirty ? <p className="muted">Há alterações sem salvar.</p> : null}
