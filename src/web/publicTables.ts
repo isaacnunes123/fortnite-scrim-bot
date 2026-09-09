@@ -8,11 +8,14 @@ import {
   listScrims,
   listTables,
   MODE_SIZE,
+  DEFAULT_TABLE_CATEGORY,
+  normalizeTableCategory,
   teamCount,
   type DropSpot,
   type LeaderboardRow,
   type PublicTable,
   type Scrim,
+  type TableCategory,
 } from "../scrims/store.js";
 import {
   fetchYuniteBoard,
@@ -38,6 +41,7 @@ export type PublicBoardSummary = {
   hasMap: boolean;
   kind: "scrim" | "table";
   source: "yunite" | "manual" | "none";
+  category: TableCategory;
 };
 
 export type PublicBoardDetail = PublicBoardSummary & {
@@ -158,6 +162,7 @@ export function summarizeBoard(scrim: Scrim): PublicBoardSummary {
     hasMap: drops.length > 0,
     kind: "scrim",
     source: scrim.yuniteTournamentId ? "yunite" : "none",
+    category: DEFAULT_TABLE_CATEGORY,
   };
 }
 
@@ -181,6 +186,7 @@ export function summarizeTable(table: PublicTable, scrim: Scrim | null): PublicB
     hasMap: map.hasMap,
     kind: "table",
     source: table.kind,
+    category: normalizeTableCategory(table.category),
   };
 }
 

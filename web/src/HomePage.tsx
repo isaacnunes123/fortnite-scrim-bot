@@ -50,7 +50,7 @@ export function HomePage() {
         <h1>BUILD CLOSED</h1>
         <p className="muted home-lead">
           Um dos primeiros e mais antigos servidores de scrim de Fortnite. Scrims todos os dias,
-          ranking público e mapa de drop — sem login.
+          numa comunidade que acompanha o competitivo desde o começo.
         </p>
         <div className="home-cta">
           <a className="btn" href="/tabelas">

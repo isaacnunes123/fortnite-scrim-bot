@@ -129,6 +129,27 @@ export type LeaderboardRow = {
 
 export type PublicTableKind = "yunite" | "manual";
 
+export const TABLE_CATEGORIES = [
+  "divisao-2",
+  "divisao-1-pro",
+  "endgame-solo",
+  "endgame-duo",
+  "endgame-reload",
+] as const;
+
+export type TableCategory = (typeof TABLE_CATEGORIES)[number];
+
+export const DEFAULT_TABLE_CATEGORY: TableCategory = "divisao-2";
+
+export function isTableCategory(value: string): value is TableCategory {
+  return (TABLE_CATEGORIES as readonly string[]).includes(value);
+}
+
+export function normalizeTableCategory(raw: unknown): TableCategory {
+  const value = String(raw ?? "").trim();
+  return isTableCategory(value) ? value : DEFAULT_TABLE_CATEGORY;
+}
+
 export type PublicTable = {
   id: string;
   name: string;
@@ -138,6 +159,7 @@ export type PublicTable = {
   live: boolean;
   scrimId: string;
   kind: PublicTableKind;
+  category: TableCategory;
   yuniteTournamentId: string;
   rows: LeaderboardRow[];
 };
@@ -526,6 +548,7 @@ export function normalizeTable(raw: Partial<PublicTable> | null | undefined): Pu
     live: raw?.live !== false,
     scrimId: String(raw?.scrimId ?? "").trim(),
     kind,
+    category: normalizeTableCategory(raw?.category),
     yuniteTournamentId: String(raw?.yuniteTournamentId ?? "").trim(),
     rows,
   };
@@ -1413,6 +1436,7 @@ export function createTable(input: {
   live?: boolean;
   scrimId?: string;
   kind?: string;
+  category?: string;
   yuniteTournamentId?: string;
   rows?: unknown[];
 }): PublicTable {
@@ -1433,6 +1457,7 @@ export function createTable(input: {
     live: input.live !== false,
     scrimId,
     kind: input.kind === "yunite" ? "yunite" : "manual",
+    category: normalizeTableCategory(input.category),
     yuniteTournamentId: String(input.yuniteTournamentId ?? "").trim(),
     rows: Array.isArray(input.rows) ? (input.rows as LeaderboardRow[]) : [],
   });

@@ -1,9 +1,13 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   api,
+  DEFAULT_TABLE_CATEGORY,
+  TABLE_CATEGORIES,
+  TABLE_CATEGORY_LABEL,
   type PublicLeaderboardRow,
   type PublicTable,
   type ScrimSummary,
+  type TableCategory,
 } from "./api";
 
 type DraftRow = {
@@ -77,6 +81,7 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
   const [live, setLive] = useState(true);
   const [scrimId, setScrimId] = useState("");
   const [kind, setKind] = useState<PublicTable["kind"]>("manual");
+  const [category, setCategory] = useState<TableCategory>(DEFAULT_TABLE_CATEGORY);
   const [yuniteId, setYuniteId] = useState("");
   const [yuniteTournaments, setYuniteTournaments] = useState<Array<{ id: string; name: string }>>(
     [],
@@ -94,6 +99,7 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
     setLive(true);
     setScrimId("");
     setKind("manual");
+    setCategory(DEFAULT_TABLE_CATEGORY);
     setYuniteId("");
     setRows([newRow(1)]);
   }
@@ -106,6 +112,7 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
     setLive(table.live);
     setScrimId(table.scrimId);
     setKind(table.kind);
+    setCategory(table.category ?? DEFAULT_TABLE_CATEGORY);
     setYuniteId(table.yuniteTournamentId);
     setRows(rowsFromTable(table));
   }
@@ -140,6 +147,7 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
       live,
       scrimId,
       kind,
+      category,
       yuniteTournamentId: yuniteId,
       rows: kind === "manual" ? payloadRows(rows) : [],
     };
@@ -195,7 +203,8 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
           </button>
           <h2 style={{ margin: "16px 0 4px" }}>Tabelas públicas</h2>
           <p className="muted">
-            Crie uma tabela Yunite ou uma <strong>tabela manual</strong>, sem UUID. Opcional:
+            Crie uma tabela Yunite ou uma <strong>tabela manual</strong>, sem UUID. Escolha a
+            divisão (2, 1 e Pro, ou Endgame) para ela aparecer na aba certa em /tabelas. Opcional:
             vincular uma scrim só para mostrar o mapa de drop.
           </p>
         </div>
@@ -236,6 +245,19 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
             {Object.entries(MODE_LABEL).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor="table-category">Divisão</label>
+          <select
+            id="table-category"
+            value={category}
+            onChange={(event) => setCategory(event.target.value as TableCategory)}
+          >
+            {TABLE_CATEGORIES.map((value) => (
+              <option key={value} value={value}>
+                {TABLE_CATEGORY_LABEL[value]}
               </option>
             ))}
           </select>
@@ -435,7 +457,9 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
                   <button type="button" onClick={() => fill(table)}>
                     <strong>{table.name}</strong>
                     <span>
-                      {table.kind === "manual" ? "Tabela manual" : "Yunite"} · {MODE_LABEL[table.mode]}
+                      {table.kind === "manual" ? "Tabela manual" : "Yunite"} ·{" "}
+                      {TABLE_CATEGORY_LABEL[table.category ?? DEFAULT_TABLE_CATEGORY]} ·{" "}
+                      {MODE_LABEL[table.mode]}
                       {table.kind === "manual" ? ` · ${table.rows.length} linhas` : ""}
                     </span>
                   </button>

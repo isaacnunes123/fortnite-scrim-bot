@@ -1571,6 +1571,41 @@ code {
   margin: 0;
 }
 
+.boards-divs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 0 0 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.boards-div {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 0;
+  padding: 12px 18px 14px;
+  cursor: pointer;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -3px;
+}
+
+.boards-div.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.boards-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
 .boards-grid {
   list-style: none;
   margin: 0;
@@ -1765,6 +1800,12 @@ code {
 @media (max-width: 900px) {
   .boards-tabs {
     display: flex;
+  }
+
+  .boards-div {
+    padding: 10px 12px 12px;
+    font-size: 13px;
+    letter-spacing: 0.04em;
   }
 
   .boards-split {

@@ -95,6 +95,7 @@ function tablePayload(body: Record<string, unknown> | undefined): {
   live?: boolean;
   scrimId?: string;
   kind?: string;
+  category?: string;
   yuniteTournamentId?: string;
   rows?: unknown[];
 } {
@@ -112,6 +113,7 @@ function tablePayload(body: Record<string, unknown> | undefined): {
     live: body?.live == null ? undefined : Boolean(body.live),
     scrimId: body?.scrimId != null ? String(body.scrimId) : undefined,
     kind,
+    category: body?.category != null ? String(body.category) : undefined,
     yuniteTournamentId,
     rows: Array.isArray(body?.rows) ? body.rows : undefined,
   };

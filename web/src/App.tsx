@@ -693,9 +693,10 @@ function Home({
         <div className="card" style={{ marginTop: 16 }}>
           <h2 style={{ marginTop: 0 }}>Tabelas públicas</h2>
           <p className="muted">
-            <strong>Adicionar tabela</strong> cria uma listagem em /tabelas sem precisar de UUID
-            Yunite. Dá para preencher as linhas na mão (<strong>tabela manual</strong>) ou
-            vincular um torneio Yunite. Opcional: ligar uma scrim só pelo mapa de drop.
+            <strong>Adicionar tabela</strong> cria uma listagem em /tabelas. Escolha a divisão
+            (2, 1 e Pro, ou Endgame). Dá para preencher as linhas na mão (<strong>tabela
+            manual</strong>) ou vincular um torneio Yunite. Opcional: ligar uma scrim só pelo
+            mapa de drop.
           </p>
           <button className="btn" type="button" onClick={onTables}>
             Adicionar tabela

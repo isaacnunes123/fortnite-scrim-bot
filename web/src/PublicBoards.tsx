@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
+  categoryMatchesTab,
+  ENDGAME_SUB_TABS,
+  normalizeTableCategory,
+  TABLE_CATEGORY_LABEL,
+  TABLE_DIVISION_TABS,
   type DropSpot,
+  type EndgameSubTab,
   type PublicBoardDetail,
   type PublicBoardSummary,
   type PublicLeaderboardRow,
+  type TableDivisionTab,
 } from "./api";
 import { listDropClaims } from "./drops";
 import { MapBoard } from "./MapBoard";
@@ -30,6 +37,30 @@ function boardIdFromPath(pathname: string): string | null {
 function go(path: string) {
   window.history.pushState({}, "", path);
   window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+let lastListPath = "/tabelas";
+
+function parseDivision(search: string): { tab: TableDivisionTab; endgame: EndgameSubTab } {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const div = params.get("div");
+  const tab: TableDivisionTab =
+    div === "divisao-1-pro" || div === "endgame" ? div : "divisao-2";
+  const eg = params.get("eg");
+  const endgame: EndgameSubTab = eg === "duo" || eg === "reload" ? eg : "solo";
+  return { tab, endgame };
+}
+
+function listPath(tab: TableDivisionTab, endgame: EndgameSubTab): string {
+  const params = new URLSearchParams();
+  if (tab !== "divisao-2") {
+    params.set("div", tab);
+  }
+  if (tab === "endgame" && endgame !== "solo") {
+    params.set("eg", endgame);
+  }
+  const qs = params.toString();
+  return qs ? `/tabelas?${qs}` : "/tabelas";
 }
 
 function formatWhen(value: string): string {
@@ -60,11 +91,12 @@ function formatScore(value: number): string {
 }
 
 export function PublicBoards() {
-  const [path, setPath] = useState(window.location.pathname);
+  const [href, setHref] = useState(() => window.location.pathname + window.location.search);
+  const path = href.split("?")[0] ?? href;
   const boardId = boardIdFromPath(path);
 
   useEffect(() => {
-    const onPop = () => setPath(window.location.pathname);
+    const onPop = () => setHref(window.location.pathname + window.location.search);
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
@@ -83,7 +115,7 @@ export function PublicBoards() {
           <img src="/brand/logo.png" alt="" className="brand-logo" />
           <span className="brand-copy">
             <strong>BUILD CLOSED</strong>
-            <span>Tabelas · mapas de drop</span>
+            <span>Scrims fechadas · Fortnite</span>
           </span>
         </a>
         <div className="actions">
@@ -92,17 +124,28 @@ export function PublicBoards() {
           </a>
         </div>
       </header>
-      {boardId ? <BoardDetail id={boardId} /> : <BoardList />}
+      {boardId ? (
+        <BoardDetail id={boardId} />
+      ) : (
+        <BoardList search={href.includes("?") ? href.slice(href.indexOf("?")) : ""} />
+      )}
     </div>
   );
 }
 
-function BoardList() {
+function BoardList({ search }: { search: string }) {
   const [boards, setBoards] = useState<PublicBoardSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [mode, setMode] = useState<"all" | PublicBoardSummary["mode"]>("all");
   const [query, setQuery] = useState("");
+  const selected = parseDivision(search);
+  const tab = selected.tab;
+  const endgame = selected.endgame;
+
+  useEffect(() => {
+    lastListPath = listPath(tab, endgame);
+  }, [tab, endgame]);
 
   useEffect(() => {
     api<{ boards: PublicBoardSummary[] }>("/api/public/tabelas")
@@ -110,16 +153,28 @@ function BoardList() {
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar"));
   }, []);
 
+  function selectTab(next: TableDivisionTab) {
+    go(listPath(next, endgame));
+  }
+
+  function selectEndgame(next: EndgameSubTab) {
+    go(listPath(tab, next));
+  }
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return boards.filter((board) => {
+      const category = normalizeTableCategory(board.category);
+      if (!categoryMatchesTab(category, tab, endgame)) {
+        return false;
+      }
       if (filter === "live" && !board.live) {
         return false;
       }
       if (filter === "done" && board.live) {
         return false;
       }
-      if (mode !== "all" && board.mode !== mode) {
+      if (tab !== "endgame" && mode !== "all" && board.mode !== mode) {
         return false;
       }
       if (!q) {
@@ -127,20 +182,51 @@ function BoardList() {
       }
       return board.name.toLowerCase().includes(q);
     });
-  }, [boards, filter, mode, query]);
+  }, [boards, filter, mode, query, tab, endgame]);
 
   return (
     <section className="boards-home">
       <div className="boards-hero">
-        <p className="boards-kicker">Rankings ao vivo</p>
+        <p className="boards-kicker">Scrims fechadas</p>
         <h1>Tabelas</h1>
         <p className="muted">
-          Colocação das scrims — Yunite ou tabela manual — e o mapa de drop quando a staff
-          vincula um lobby. Sem login.
+          Colocação das grades BUILD — Divisão 2, Divisão 1 e Pro, e Endgame.
         </p>
       </div>
 
       {error ? <p className="error">{error}</p> : null}
+
+      <div className="boards-divs" role="tablist" aria-label="Divisões">
+        {TABLE_DIVISION_TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.id}
+            className={`boards-div ${tab === item.id ? "on" : ""}`}
+            onClick={() => selectTab(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "endgame" ? (
+        <div className="boards-subnav" role="tablist" aria-label="Endgame">
+          {ENDGAME_SUB_TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={endgame === item.id}
+              className={`boards-chip ${endgame === item.id ? "on" : ""}`}
+              onClick={() => selectEndgame(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="boards-toolbar">
         <div className="boards-chips">
@@ -160,16 +246,18 @@ function BoardList() {
               {label}
             </button>
           ))}
-          {(["solo", "duo", "trio", "squad"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              className={`boards-chip ${mode === value ? "on" : ""}`}
-              onClick={() => setMode((current) => (current === value ? "all" : value))}
-            >
-              {MODE_LABEL[value]}
-            </button>
-          ))}
+          {tab !== "endgame"
+            ? (["solo", "duo", "trio", "squad"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`boards-chip ${mode === value ? "on" : ""}`}
+                  onClick={() => setMode((current) => (current === value ? "all" : value))}
+                >
+                  {MODE_LABEL[value]}
+                </button>
+              ))
+            : null}
         </div>
         <input
           className="boards-search"
@@ -180,7 +268,7 @@ function BoardList() {
       </div>
 
       {visible.length === 0 ? (
-        <p className="muted">Nenhuma tabela pública ainda. Quando a staff publicar, ela aparece aqui.</p>
+        <p className="muted">Nenhuma tabela nesta divisão ainda. Quando a staff publicar, ela aparece aqui.</p>
       ) : (
         <ul className="boards-grid">
           {visible.map((board) => (
@@ -203,6 +291,8 @@ function BoardList() {
                   </span>
                 </h2>
                 <p>
+                  {TABLE_CATEGORY_LABEL[normalizeTableCategory(board.category)]}
+                  {" · "}
                   {MODE_LABEL[board.mode]}
                   {board.kind === "table"
                     ? board.source === "manual"
@@ -258,7 +348,7 @@ function BoardDetail({ id }: { id: string }) {
   if (error && !board) {
     return (
       <section className="card">
-        <button className="btn secondary" type="button" onClick={() => go("/tabelas")}>
+        <button className="btn secondary" type="button" onClick={() => go(lastListPath)}>
           Voltar
         </button>
         <p className="error">{error}</p>
@@ -279,7 +369,7 @@ function BoardDetail({ id }: { id: string }) {
   return (
     <section className="boards-detail">
       <div className="boards-detail-head">
-        <button className="btn secondary" type="button" onClick={() => go("/tabelas")}>
+        <button className="btn secondary" type="button" onClick={() => go(lastListPath)}>
           Voltar
         </button>
         <div>

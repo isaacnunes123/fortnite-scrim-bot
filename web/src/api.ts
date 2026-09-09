@@ -200,6 +200,64 @@ export type ScrimDetail = {
   yuniteTournamentId?: string;
 };
 
+export const TABLE_CATEGORIES = [
+  "divisao-2",
+  "divisao-1-pro",
+  "endgame-solo",
+  "endgame-duo",
+  "endgame-reload",
+] as const;
+
+export type TableCategory = (typeof TABLE_CATEGORIES)[number];
+
+export const DEFAULT_TABLE_CATEGORY: TableCategory = "divisao-2";
+
+export const TABLE_CATEGORY_LABEL: Record<TableCategory, string> = {
+  "divisao-2": "Divisão 2",
+  "divisao-1-pro": "Divisão 1 e Pro",
+  "endgame-solo": "Endgame · Solo",
+  "endgame-duo": "Endgame · Duo",
+  "endgame-reload": "Endgame · Reload",
+};
+
+export type TableDivisionTab = "divisao-2" | "divisao-1-pro" | "endgame";
+export type EndgameSubTab = "solo" | "duo" | "reload";
+
+export const TABLE_DIVISION_TABS: Array<{ id: TableDivisionTab; label: string }> = [
+  { id: "divisao-2", label: "Divisão 2" },
+  { id: "divisao-1-pro", label: "Divisão 1 e Pro" },
+  { id: "endgame", label: "Endgame" },
+];
+
+export const ENDGAME_SUB_TABS: Array<{
+  id: EndgameSubTab;
+  label: string;
+  category: TableCategory;
+}> = [
+  { id: "solo", label: "Solo", category: "endgame-solo" },
+  { id: "duo", label: "Duo", category: "endgame-duo" },
+  { id: "reload", label: "Reload", category: "endgame-reload" },
+];
+
+export function isTableCategory(value: string | null | undefined): value is TableCategory {
+  return TABLE_CATEGORIES.includes(value as TableCategory);
+}
+
+export function normalizeTableCategory(value: string | null | undefined): TableCategory {
+  return isTableCategory(value) ? value : DEFAULT_TABLE_CATEGORY;
+}
+
+export function categoryMatchesTab(
+  category: TableCategory,
+  tab: TableDivisionTab,
+  endgame: EndgameSubTab,
+): boolean {
+  if (tab === "endgame") {
+    return category === ENDGAME_SUB_TABS.find((item) => item.id === endgame)?.category;
+  }
+  return category === tab;
+}
+
 export type PublicBoardSummary = {
   id: string;
   name: string;
@@ -217,6 +275,7 @@ export type PublicBoardSummary = {
   hasMap?: boolean;
   kind?: "scrim" | "table";
   source?: "yunite" | "manual" | "none";
+  category?: TableCategory;
 };
 
 export type PublicTable = {
@@ -228,6 +287,7 @@ export type PublicTable = {
   live: boolean;
   scrimId: string;
   kind: "yunite" | "manual";
+  category: TableCategory;
   yuniteTournamentId: string;
   rows: PublicLeaderboardRow[];
 };
