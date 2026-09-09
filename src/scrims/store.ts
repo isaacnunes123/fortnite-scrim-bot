@@ -1169,6 +1169,19 @@ export function getScrim(id: string): Scrim | null {
   return scrim ? normalizeScrim(scrim) : null;
 }
 
+/** Coloca a scrim na memória deste processo (ex.: o bot puxou da Vercel). Não grava sozinho. */
+export function adoptScrim(scrim: Scrim): Scrim {
+  const store = getStore();
+  const next = normalizeScrim(scrim);
+  const index = store.scrims.findIndex((item) => item.id === next.id);
+  if (index >= 0) {
+    store.scrims[index] = pickScrim(store.scrims[index]!, next);
+  } else {
+    store.scrims.push(next);
+  }
+  return getScrim(next.id) ?? next;
+}
+
 export function findScrimForChannel(
   guildId: string,
   channelId: string,

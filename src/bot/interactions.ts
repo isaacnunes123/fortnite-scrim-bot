@@ -8,8 +8,7 @@ import {
   type Client,
   type Interaction,
 } from "discord.js";
-import { env } from "../env.js";
-import { registerPlayer, resolveScrimFromButton } from "../scrims/checkin.js";
+import { registerPlayer, resolveScrimFromButtonLive } from "../scrims/checkin.js";
 import {
   refreshRegistrationMessage,
   revealFillChannel,
@@ -65,7 +64,7 @@ async function resolveButtonScrim(
     interaction.channel && "parentId" in interaction.channel
       ? interaction.channel.parentId
       : null;
-  return resolveScrimFromButton(
+  return resolveScrimFromButtonLive(
     scrimId,
     interaction.guildId ?? undefined,
     interaction.channelId,
@@ -75,9 +74,6 @@ async function resolveButtonScrim(
 
 export async function handleInteraction(interaction: Interaction, client: Client) {
   if (interaction.isButton()) {
-    if (env.discordPublicKey) {
-      return;
-    }
     await pullRemoteStore().catch(() => undefined);
     const [action, scrimId, extra] = interaction.customId.split(":");
     if (!scrimId) {
@@ -118,10 +114,8 @@ async function onRegisterButton(
   client: Client,
   scrimId: string,
 ) {
+  await interaction.deferReply({ ephemeral: true });
   const scrim = await resolveButtonScrim(interaction, scrimId);
-  if (!scrim) {
-    return;
-  }
   const member = await resolveMember(interaction);
   const outcome = registerPlayer(
     scrim,
@@ -130,7 +124,7 @@ async function onRegisterButton(
       : null,
   );
   if (!outcome.ok) {
-    await interaction.reply({ content: outcome.content, ephemeral: true });
+    await interaction.editReply({ content: outcome.content });
     return;
   }
   if (outcome.already) {
@@ -155,7 +149,7 @@ async function onRegisterButton(
     await replyOnlyToPlayer(interaction, member!, outcome.content);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível registrar";
-    await interaction.reply({ content: message, ephemeral: true });
+    await interaction.editReply({ content: message });
   }
 }
 

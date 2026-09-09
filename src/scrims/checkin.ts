@@ -1,15 +1,18 @@
+import { env } from "../env.js";
+import { publicBaseUrl } from "./links.js";
 import {
   addInvite,
+  adoptScrim,
   findScrimForChannel,
   getActiveBan,
   getScrim,
   listInvites,
+  pullRemoteStore,
   remainingCheckinCooldown,
   teamCount,
   type Scrim,
 } from "./store.js";
 import { canRegisterNow } from "./time.js";
-
 export type CheckinMember = {
   id: string;
   displayName: string;
@@ -39,6 +42,53 @@ export function resolveScrimFromButton(
     return findScrimForChannel(guildId, channelId, parentId);
   }
   return null;
+}
+
+async function fetchScrimFromSite(
+  scrimId: string,
+  channelId?: string,
+  parentId?: string | null,
+): Promise<Scrim | null> {
+  const base = publicBaseUrl().replace(/\/$/, "");
+  if (!base || base.includes("localhost") || base.includes("railway.app")) {
+    return null;
+  }
+  const params = new URLSearchParams();
+  if (channelId) {
+    params.set("channelId", channelId);
+  }
+  if (parentId) {
+    params.set("parentId", parentId);
+  }
+  const query = params.toString();
+  const url = `${base}/api/internal/scrims/${encodeURIComponent(scrimId || "unknown")}${query ? `?${query}` : ""}`;
+  try {
+    const response = await fetch(url, {
+      headers: { authorization: `Bearer ${env.sessionSecret}` },
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const body = (await response.json()) as { scrim?: Scrim };
+    return body.scrim ? adoptScrim(body.scrim) : null;
+  } catch (error) {
+    console.error("[checkin] fetchScrimFromSite:", error);
+    return null;
+  }
+}
+
+export async function resolveScrimFromButtonLive(
+  scrimId: string,
+  guildId?: string,
+  channelId?: string,
+  parentId?: string | null,
+): Promise<Scrim | null> {
+  await pullRemoteStore();
+  const local = resolveScrimFromButton(scrimId, guildId, channelId, parentId);
+  if (local) {
+    return local;
+  }
+  return fetchScrimFromSite(scrimId, channelId, parentId);
 }
 
 export function playerTeamName(scrimId: string, displayName: string, userId: string): string {
