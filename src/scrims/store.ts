@@ -135,6 +135,7 @@ export const TABLE_CATEGORIES = [
   "endgame-solo",
   "endgame-duo",
   "endgame-reload",
+  "closed",
 ] as const;
 
 export type TableCategory = (typeof TABLE_CATEGORIES)[number];

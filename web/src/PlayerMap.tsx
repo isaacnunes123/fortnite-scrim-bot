@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import type { DropSpot } from "./api";
 import { dropIsFull, listDropClaims, teamOnDrop } from "./drops";
 import { MapBoard } from "./MapBoard";
+import { useBrandTheme } from "./brand";
 
 export function PlayerMap() {
+  useBrandTheme("scrims", "Mapa · BUILD SCRIMS");
   const path = window.location.pathname.split("/");
   const scrimId = path[2] ?? "";
   const [name, setName] = useState("");
@@ -152,7 +154,7 @@ export function PlayerMap() {
         <div className="brand">
           <img src="/brand/logo.png" alt="" className="brand-logo" />
           <span className="brand-copy">
-            <strong>BUILD CLOSED</strong>
+            <strong>BUILD SCRIMS</strong>
             <span>
               {name ? `${name} · ` : ""}
               {fortniteNick || teamName || "Mapa"}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, normalizeTableCategory, type PublicBoardSummary } from "./api";
-import { BANNER_ROXO, SiteHeader, useBrandTheme } from "./brand";
+import { SiteHeader, useBrandTheme } from "./brand";
 
 const MODE_LABEL = {
   solo: "Solo",
@@ -11,22 +11,20 @@ const MODE_LABEL = {
 
 const STATS = [
   { label: "Membros", value: "190k", detail: "na comunidade BUILD" },
-  { label: "Scrims", value: "Todo dia", detail: "treino competitivo na grade" },
+  { label: "Scrims", value: "Todo dia", detail: "treino fechado na grade" },
   { label: "Ativos no dia", value: "~1k", detail: "pessoas no servidor" },
   { label: "História", value: "Desde o começo", detail: "um dos primeiros servidores de scrim" },
 ] as const;
 
-export function HomePage() {
+export function ClosedPage() {
   const [boards, setBoards] = useState<PublicBoardSummary[]>([]);
-  useBrandTheme("scrims");
+  useBrandTheme("closed");
 
   useEffect(() => {
     api<{ boards: PublicBoardSummary[] }>("/api/public/tabelas")
       .then((data) =>
         setBoards(
-          (data.boards ?? [])
-            .filter((board) => normalizeTableCategory(board.category) !== "closed")
-            .slice(0, 3),
+          (data.boards ?? []).filter((board) => normalizeTableCategory(board.category) === "closed"),
         ),
       )
       .catch(() => setBoards([]));
@@ -34,30 +32,19 @@ export function HomePage() {
 
   return (
     <div className="shell boards-shell home-shell">
-      <SiteHeader brand="scrims" current="home" />
+      <SiteHeader brand="closed" current="closed" />
 
-      <section className="scrims-hero">
-        <div
-          className="scrims-hero-bg"
-          style={{ backgroundImage: `url("${BANNER_ROXO}")` }}
-          aria-hidden
-        />
-        <span className="hero-watermark">BUILD SCRIMS</span>
+      <section className="boards-hero home-hero closed-hero">
+        <span className="hero-watermark">BUILD CLOSED</span>
         <p className="boards-kicker">Fortnite · treino competitivo</p>
-        <h1>BUILD SCRIMS</h1>
-        <p className="scrims-slogan">
-          Venha jogar no <em>melhor server</em> de scrims do Brasil!
-        </p>
+        <h1>BUILD CLOSED</h1>
         <p className="muted home-lead">
-          Comunidade de scrims de Fortnite todos os dias. Tabelas, drops e o melhor server de
-          treino competitivo do Brasil.
+          Um dos primeiros e mais antigos servidores de scrim de Fortnite. Scrims todos os dias,
+          numa comunidade que acompanha o competitivo desde o começo.
         </p>
         <div className="home-cta">
-          <a className="btn" href="/tabelas">
-            Ver tabelas
-          </a>
-          <a className="btn secondary" href="/closed">
-            Closed
+          <a className="btn" href="/tabelas?div=closed">
+            Ver tabelas Closed
           </a>
           <a className="btn secondary" href="https://discord.gg/buildscrims" target="_blank" rel="noreferrer">
             Entrar no Discord
@@ -75,14 +62,18 @@ export function HomePage() {
         ))}
       </section>
 
-      {boards.length > 0 ? (
-        <section className="home-boards">
-          <div className="boards-table-head">
-            <h2>Tabelas recentes</h2>
-            <a className="btn secondary" href="/tabelas">
-              Ver todas
-            </a>
-          </div>
+      <section className="home-boards">
+        <div className="boards-table-head">
+          <h2>Tabelas Closed</h2>
+          <a className="btn secondary" href="/tabelas?div=closed">
+            Ver todas
+          </a>
+        </div>
+        {boards.length === 0 ? (
+          <p className="muted">
+            Nenhuma tabela Closed ainda. Quando a staff publicar na aba Closed, ela aparece aqui.
+          </p>
+        ) : (
           <ul className="boards-grid">
             {boards.map((board) => (
               <li key={board.id}>
@@ -106,8 +97,8 @@ export function HomePage() {
               </li>
             ))}
           </ul>
-        </section>
-      ) : null}
+        )}
+      </section>
     </div>
   );
 }

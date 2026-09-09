@@ -13,6 +13,7 @@ import {
   type PublicLeaderboardRow,
   type TableDivisionTab,
 } from "./api";
+import { SiteHeader, useBrandTheme } from "./brand";
 import { listDropClaims } from "./drops";
 import { MapBoard } from "./MapBoard";
 
@@ -45,7 +46,7 @@ function parseDivision(search: string): { tab: TableDivisionTab; endgame: Endgam
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
   const div = params.get("div");
   const tab: TableDivisionTab =
-    div === "divisao-1-pro" || div === "endgame" ? div : "divisao-2";
+    div === "divisao-1-pro" || div === "endgame" || div === "closed" ? div : "divisao-2";
   const eg = params.get("eg");
   const endgame: EndgameSubTab = eg === "duo" || eg === "reload" ? eg : "solo";
   return { tab, endgame };
@@ -92,8 +93,12 @@ function formatScore(value: number): string {
 
 export function PublicBoards() {
   const [href, setHref] = useState(() => window.location.pathname + window.location.search);
+  const [detailClosed, setDetailClosed] = useState(false);
   const path = href.split("?")[0] ?? href;
+  const search = href.includes("?") ? href.slice(href.indexOf("?")) : "";
   const boardId = boardIdFromPath(path);
+  const listClosed = !boardId && parseDivision(search).tab === "closed";
+  const brand = boardId ? (detailClosed ? "closed" : "scrims") : listClosed ? "closed" : "scrims";
 
   useEffect(() => {
     const onPop = () => setHref(window.location.pathname + window.location.search);
@@ -102,32 +107,25 @@ export function PublicBoards() {
   }, []);
 
   useEffect(() => {
-    document.title = boardId ? "Tabela · BUILD CLOSED" : "Tabelas · BUILD CLOSED";
+    if (!boardId) {
+      setDetailClosed(false);
+    }
   }, [boardId]);
+
+  useBrandTheme(
+    brand,
+    boardId
+      ? `Tabela · ${brand === "closed" ? "BUILD CLOSED" : "BUILD SCRIMS"}`
+      : `Tabelas · ${brand === "closed" ? "BUILD CLOSED" : "BUILD SCRIMS"}`,
+  );
 
   return (
     <div className="shell boards-shell">
-      <header className="topbar">
-        <a className="brand" href="/" onClick={(event) => {
-          event.preventDefault();
-          window.location.href = "/";
-        }}>
-          <img src="/brand/logo.png" alt="" className="brand-logo" />
-          <span className="brand-copy">
-            <strong>BUILD CLOSED</strong>
-            <span>Scrims fechadas · Fortnite</span>
-          </span>
-        </a>
-        <div className="actions">
-          <a className="btn secondary" href="/painel">
-            Painel staff
-          </a>
-        </div>
-      </header>
+      <SiteHeader brand={brand} current={brand === "closed" ? "closed" : "tabelas"} />
       {boardId ? (
-        <BoardDetail id={boardId} />
+        <BoardDetail id={boardId} onClosedBrand={setDetailClosed} />
       ) : (
-        <BoardList search={href.includes("?") ? href.slice(href.indexOf("?")) : ""} />
+        <BoardList search={search} />
       )}
     </div>
   );
@@ -187,11 +185,21 @@ function BoardList({ search }: { search: string }) {
   return (
     <section className="boards-home">
       <div className="boards-hero">
-        <p className="boards-kicker">Scrims fechadas</p>
-        <h1>Tabelas</h1>
-        <p className="muted">
-          Colocação das grades BUILD — Divisão 2, Divisão 1 e Pro, e Endgame.
-        </p>
+        {tab === "closed" ? (
+          <>
+            <p className="boards-kicker">Scrims fechadas</p>
+            <h1>BUILD CLOSED</h1>
+            <p className="muted">Tabelas e mapas das scrims fechadas da aba Closed.</p>
+          </>
+        ) : (
+          <>
+            <p className="boards-kicker">BUILD SCRIMS</p>
+            <h1>Tabelas</h1>
+            <p className="muted">
+              Colocação das grades BUILD — Divisão 2, Divisão 1 e Pro, e Endgame.
+            </p>
+          </>
+        )}
       </div>
 
       {error ? <p className="error">{error}</p> : null}
@@ -268,7 +276,11 @@ function BoardList({ search }: { search: string }) {
       </div>
 
       {visible.length === 0 ? (
-        <p className="muted">Nenhuma tabela nesta divisão ainda. Quando a staff publicar, ela aparece aqui.</p>
+        <p className="muted">
+          {tab === "closed"
+            ? "Nenhuma tabela Closed ainda. Quando a staff publicar nesta aba, ela aparece aqui."
+            : "Nenhuma tabela nesta divisão ainda. Quando a staff publicar, ela aparece aqui."}
+        </p>
       ) : (
         <ul className="boards-grid">
           {visible.map((board) => (
@@ -317,7 +329,13 @@ function BoardList({ search }: { search: string }) {
   );
 }
 
-function BoardDetail({ id }: { id: string }) {
+function BoardDetail({
+  id,
+  onClosedBrand,
+}: {
+  id: string;
+  onClosedBrand: (closed: boolean) => void;
+}) {
   const [board, setBoard] = useState<PublicBoardDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<DetailTab>("table");
@@ -332,6 +350,11 @@ function BoardDetail({ id }: { id: string }) {
       }`,
     );
     setBoard(data.board);
+    const isClosed = normalizeTableCategory(data.board.category) === "closed";
+    onClosedBrand(isClosed);
+    if (isClosed) {
+      lastListPath = "/tabelas?div=closed";
+    }
   }
 
   useEffect(() => {

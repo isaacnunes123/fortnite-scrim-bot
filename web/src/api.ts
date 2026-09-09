@@ -206,6 +206,7 @@ export const TABLE_CATEGORIES = [
   "endgame-solo",
   "endgame-duo",
   "endgame-reload",
+  "closed",
 ] as const;
 
 export type TableCategory = (typeof TABLE_CATEGORIES)[number];
@@ -218,15 +219,17 @@ export const TABLE_CATEGORY_LABEL: Record<TableCategory, string> = {
   "endgame-solo": "Endgame · Solo",
   "endgame-duo": "Endgame · Duo",
   "endgame-reload": "Endgame · Reload",
+  closed: "Closed",
 };
 
-export type TableDivisionTab = "divisao-2" | "divisao-1-pro" | "endgame";
+export type TableDivisionTab = "divisao-2" | "divisao-1-pro" | "endgame" | "closed";
 export type EndgameSubTab = "solo" | "duo" | "reload";
 
 export const TABLE_DIVISION_TABS: Array<{ id: TableDivisionTab; label: string }> = [
   { id: "divisao-2", label: "Divisão 2" },
   { id: "divisao-1-pro", label: "Divisão 1 e Pro" },
   { id: "endgame", label: "Endgame" },
+  { id: "closed", label: "Closed" },
 ];
 
 export const ENDGAME_SUB_TABS: Array<{
@@ -254,6 +257,9 @@ export function categoryMatchesTab(
 ): boolean {
   if (tab === "endgame") {
     return category === ENDGAME_SUB_TABS.find((item) => item.id === endgame)?.category;
+  }
+  if (tab === "closed") {
+    return category === "closed";
   }
   return category === tab;
 }

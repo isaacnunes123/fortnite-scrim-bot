@@ -17,6 +17,7 @@ import {
 import { MapBoard } from "./MapBoard";
 import { StaffTables } from "./StaffTables";
 import { TemplatesPage } from "./Templates";
+import { useBrandTheme } from "./brand";
 
 type AuthState = {
   checking: boolean;
@@ -108,6 +109,7 @@ function formatUptime(ms: number | null): string {
 }
 
 export function App() {
+  useBrandTheme("scrims", "Painel · BUILD SCRIMS");
   const [auth, setAuth] = useState<AuthState>({
     checking: true,
     authenticated: false,
@@ -190,10 +192,10 @@ export function App() {
     return (
       <div className="login">
         <div className="card">
-          <img src="/brand/banner.jpg" alt="BUILD CLOSED" className="login-banner" />
+          <img src="/banners/Banner_Roxo.webp" alt="BUILD SCRIMS" className="login-banner" />
           <img src="/brand/logo.png" alt="" className="login-logo" />
-          <h1>BUILD CLOSED</h1>
-          <p>Painel de scrims fechadas. Treino no Fortnite.</p>
+          <h1>BUILD SCRIMS</h1>
+          <p>Painel staff da comunidade BUILD SCRIMS.</p>
           {error ? <p className="error">{error}</p> : null}
           {auth.discordLogin ? (
             <>
@@ -203,6 +205,9 @@ export function App() {
               </a>
               <a className="btn secondary" href="/">
                 Página inicial
+              </a>
+              <a className="btn secondary" href="/closed">
+                Closed
               </a>
               <a className="btn secondary" href="/tabelas">
                 Tabelas públicas
@@ -225,6 +230,9 @@ export function App() {
               <a className="btn secondary" href="/">
                 Página inicial
               </a>
+              <a className="btn secondary" href="/closed">
+                Closed
+              </a>
               <a className="btn secondary" href="/tabelas">
                 Tabelas públicas
               </a>
@@ -243,13 +251,16 @@ export function App() {
         <button className="brand linkish" type="button" onClick={() => setView({ page: "home" })}>
           <img src="/brand/logo.png" alt="" className="brand-logo" />
           <span className="brand-copy">
-            <strong>BUILD CLOSED</strong>
-            <span>Scrims fechadas · Fortnite</span>
+            <strong>BUILD SCRIMS</strong>
+            <span>Scrims · Fortnite</span>
           </span>
         </button>
         <div className="actions">
           <a className="btn secondary" href="/">
             Site
+          </a>
+          <a className="btn secondary" href="/closed">
+            Closed
           </a>
           <a className="btn secondary" href="/tabelas">
             Tabelas públicas
@@ -694,7 +705,7 @@ function Home({
           <h2 style={{ marginTop: 0 }}>Tabelas públicas</h2>
           <p className="muted">
             <strong>Adicionar tabela</strong> cria uma listagem em /tabelas. Escolha a divisão
-            (2, 1 e Pro, ou Endgame). Dá para preencher as linhas na mão (<strong>tabela
+            (2, 1 e Pro, Endgame ou Closed). Dá para preencher as linhas na mão (<strong>tabela
             manual</strong>) ou vincular um torneio Yunite. Opcional: ligar uma scrim só pelo
             mapa de drop.
           </p>

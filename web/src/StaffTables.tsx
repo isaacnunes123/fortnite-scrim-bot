@@ -204,7 +204,8 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
           <h2 style={{ margin: "16px 0 4px" }}>Tabelas públicas</h2>
           <p className="muted">
             Crie uma tabela Yunite ou uma <strong>tabela manual</strong>, sem UUID. Escolha a
-            divisão (2, 1 e Pro, ou Endgame) para ela aparecer na aba certa em /tabelas. Opcional:
+            divisão (2, 1 e Pro, Endgame ou Closed) para ela aparecer na aba certa em /tabelas.
+            Tabelas Closed ficam na aba Closed, com a identidade BUILD CLOSED. Opcional:
             vincular uma scrim só para mostrar o mapa de drop.
           </p>
         </div>
