@@ -200,6 +200,9 @@ export function App() {
               <a className="btn" href="/api/auth/discord?next=admin">
                 Entrar com Discord
               </a>
+              <a className="btn secondary" href="/tabelas">
+                Tabelas públicas
+              </a>
             </>
           ) : (
             <form onSubmit={onLogin}>
@@ -215,6 +218,9 @@ export function App() {
               <button className="btn" type="submit" disabled={loading}>
                 {loading ? "Entrando…" : "Entrar"}
               </button>
+              <a className="btn secondary" href="/tabelas">
+                Tabelas públicas
+              </a>
             </form>
           )}
         </div>
@@ -235,6 +241,9 @@ export function App() {
           </span>
         </button>
         <div className="actions">
+          <a className="btn secondary" href="/tabelas">
+            Tabelas
+          </a>
           <button className="btn secondary" type="button" onClick={() => setView({ page: "presets" })}>
             Presets
           </button>
@@ -745,6 +754,9 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
   const [filter, setFilter] = useState<"all" | "drop" | "pending">("all");
   const [openId, setOpenId] = useState<string | null>(null);
   const [embeds, setEmbeds] = useState<ScrimEmbeds | null>(null);
+  const [yuniteId, setYuniteId] = useState("");
+  const [yuniteTournaments, setYuniteTournaments] = useState<Array<{ id: string; name: string }>>([]);
+  const [yuniteConfigured, setYuniteConfigured] = useState(true);
 
   async function load() {
     const [data, feed] = await Promise.all([
@@ -757,6 +769,7 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
     setCode(data.scrim.matchCode ?? "");
     setLeaveUntil(data.scrim.leaveUntil ?? "");
     setPunishHours(data.scrim.punishHours ?? 24);
+    setYuniteId(data.scrim.yuniteTournamentId ?? "");
     if (data.scrim.embeds) {
       setEmbeds(data.scrim.embeds);
     }
@@ -771,6 +784,15 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
     load().catch((err) => {
       setError(err instanceof Error ? err.message : "Falha ao carregar");
     });
+    api<{ configured: boolean; tournaments: Array<{ id: string; name: string }> }>("/api/yunite/tournaments")
+      .then((data) => {
+        setYuniteConfigured(data.configured);
+        setYuniteTournaments(data.tournaments ?? []);
+      })
+      .catch(() => {
+        setYuniteConfigured(false);
+        setYuniteTournaments([]);
+      });
   }, [id]);
 
   const teams = useMemo(() => {
@@ -1009,6 +1031,62 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           }}
         >
           {scrim.dropsOpen ? "Parar marcação de drops" : "Liberar marcação de drops"}
+        </button>
+      </form>
+
+      <form
+        className="invite-form"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setError(null);
+          setNotice(null);
+          try {
+            await api(`/api/scrims/${id}/yunite`, {
+              method: "POST",
+              body: JSON.stringify({ yuniteTournamentId: yuniteId }),
+            });
+            setNotice("Torneio Yunite vinculado. A tabela pública já pode puxar a colocação.");
+            await load();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Não foi possível salvar o Yunite");
+          }
+        }}
+      >
+        <label htmlFor="yuniteTournamentId">Torneio Yunite (tabela pública)</label>
+        <p className="muted">
+          Cole o ID do torneio ou o link da tabela no Yunite. A chave da API fica só no servidor.
+          Público: <a href={`/tabelas/${id}`}>/tabelas/{id}</a>
+        </p>
+        {!yuniteConfigured ? (
+          <p className="muted">
+            Configure <code>YUNITE_API_KEY</code> no Railway para o site puxar a colocação.
+          </p>
+        ) : null}
+        {yuniteTournaments.length > 0 ? (
+          <>
+            <label htmlFor="yunitePick">Escolher torneio da API</label>
+            <select
+              id="yunitePick"
+              value={yuniteTournaments.some((item) => item.id === yuniteId) ? yuniteId : ""}
+              onChange={(event) => setYuniteId(event.target.value)}
+            >
+              <option value="">Selecionar…</option>
+              {yuniteTournaments.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : null}
+        <input
+          id="yuniteTournamentId"
+          value={yuniteId}
+          onChange={(event) => setYuniteId(event.target.value)}
+          placeholder="uuid do torneio ou https://yunite.xyz/leaderboard/…"
+        />
+        <button className="btn" type="submit">
+          Salvar torneio Yunite
         </button>
       </form>
 

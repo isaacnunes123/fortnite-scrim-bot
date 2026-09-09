@@ -14,6 +14,8 @@ import {
   isStaffSession,
   resolveMapAccess,
 } from "./dropAuth.js";
+import { getPublicBoard, listPublicBoards, saveYuniteTournamentId } from "./publicTables.js";
+import { listYuniteTournaments, yuniteConfigured } from "../yunite/client.js";
 import {
   applyPlayerDrop,
   ensureDropMapEmbed,
@@ -553,6 +555,43 @@ export async function createWebApp() {
     res.json({ scrim: updated });
   });
 
+  app.post("/api/scrims/:id/yunite", requireAuth, (req, res) => {
+    const scrim = getScrim(String(req.params.id));
+    if (!scrim) {
+      res.status(404).json({ error: "Scrim não encontrada" });
+      return;
+    }
+    try {
+      const yuniteTournamentId = saveYuniteTournamentId(
+        String(req.body?.yuniteTournamentId ?? ""),
+      );
+      const updated = patchScrim(scrim.id, { yuniteTournamentId });
+      addLog({
+        scrimId: scrim.id,
+        kind: "yunite",
+        summary: yuniteTournamentId
+          ? `Torneio Yunite vinculado: ${yuniteTournamentId}`
+          : "Torneio Yunite desvinculado",
+      });
+      res.json({ scrim: updated });
+    } catch (error) {
+      fail(res, error, "Não foi possível salvar o ID Yunite");
+    }
+  });
+
+  app.get("/api/yunite/tournaments", requireAuth, async (_req, res) => {
+    if (!yuniteConfigured()) {
+      res.json({ configured: false, tournaments: [] });
+      return;
+    }
+    try {
+      const tournaments = await listYuniteTournaments();
+      res.json({ configured: true, tournaments });
+    } catch (error) {
+      fail(res, error, "Não foi possível listar torneios Yunite");
+    }
+  });
+
   app.post("/api/scrims/:id/fill/open", requireAuth, async (req, res) => {
     const client = getDiscordClient();
     const scrim = getScrim(String(req.params.id));
@@ -755,6 +794,26 @@ export async function createWebApp() {
       return;
     }
     res.json({ ok: true });
+  });
+
+  app.get("/api/public/tabelas", (_req, res) => {
+    res.json({ boards: listPublicBoards() });
+  });
+
+  app.get("/api/public/tabelas/:id", async (req, res) => {
+    try {
+      const board = await getPublicBoard(
+        String(req.params.id),
+        String(req.query.session ?? ""),
+      );
+      if (!board) {
+        res.status(404).json({ error: "Scrim não encontrada" });
+        return;
+      }
+      res.json({ board });
+    } catch (error) {
+      fail(res, error, "Não foi possível carregar a tabela");
+    }
   });
 
   app.get("/api/public/scrims/:id/map", async (req, res) => {

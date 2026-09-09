@@ -114,6 +114,7 @@ export type Scrim = {
   teamsPerDrop: number;
   maxContestedDrops: number;
   embeds: ScrimEmbeds;
+  yuniteTournamentId: string;
 };
 
 export type MapTemplate = {
@@ -422,6 +423,7 @@ function normalizeScrim(raw: Scrim): Scrim {
     teamsPerDrop: clampTeamsPerDrop(raw.teamsPerDrop),
     maxContestedDrops: clampMaxContestedDrops(raw.maxContestedDrops),
     embeds: normalizeEmbeds(raw.embeds),
+    yuniteTournamentId: String(raw.yuniteTournamentId ?? "").trim(),
   };
 }
 
@@ -942,6 +944,7 @@ export function createScrim(input: {
       input.maxContestedDrops ?? template.maxContestedDrops,
     ),
     embeds: defaultEmbeds(),
+    yuniteTournamentId: "",
   };
   store.scrims.push(scrim);
   persist();

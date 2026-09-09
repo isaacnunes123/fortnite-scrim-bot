@@ -22,6 +22,7 @@ export const env = {
   cookieSecure:
     process.env.NODE_ENV === "production" ||
     (process.env.PUBLIC_BASE_URL ?? "").startsWith("https://"),
+  yuniteApiKey: process.env.YUNITE_API_KEY?.trim() ?? "",
 };
 
 function parseIdList(raw: string | undefined): string[] {

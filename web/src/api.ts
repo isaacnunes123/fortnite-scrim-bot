@@ -197,4 +197,45 @@ export type ScrimDetail = {
   maxContestedDrops?: number;
   embeds?: ScrimEmbeds;
   discord: { lobbyNumber: number; fillChatOpen: boolean } | null;
+  yuniteTournamentId?: string;
+};
+
+export type PublicBoardSummary = {
+  id: string;
+  name: string;
+  mode: "solo" | "duo" | "trio" | "squad";
+  createdAt: string;
+  teamSize: number;
+  teamCount: number;
+  maxSlots: number;
+  claimedDrops: number;
+  dropCount: number;
+  dropsOpen: boolean;
+  live: boolean;
+  hasTable: boolean;
+};
+
+export type PublicLeaderboardRow = {
+  rank: number;
+  players: string[];
+  games: number;
+  eliminations: number;
+  wins: number;
+  score: number;
+};
+
+export type PublicBoardDetail = PublicBoardSummary & {
+  mapImageUrl: string;
+  drops: DropSpot[];
+  teamsPerDrop: number;
+  maxContestedDrops: number;
+  yunite: {
+    configured: boolean;
+    linked: boolean;
+    error: string | null;
+    title?: string;
+    rows?: PublicLeaderboardRow[];
+    matches?: Array<{ id: string; name: string }>;
+    sessionId?: string | null;
+  };
 };
