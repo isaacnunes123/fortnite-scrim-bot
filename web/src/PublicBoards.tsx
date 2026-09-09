@@ -282,9 +282,9 @@ function BoardList({ search }: { search: string }) {
             : "Nenhuma tabela nesta divisão ainda. Quando a staff publicar, ela aparece aqui."}
         </p>
       ) : (
-        <ul className="boards-grid">
-          {visible.map((board) => (
-            <li key={board.id}>
+        <ul className="boards-grid" key={`${tab}-${endgame}-${filter}-${mode}`}>
+          {visible.map((board, index) => (
+            <li key={board.id} style={{ animationDelay: `${Math.min(index, 8) * 55}ms` }}>
               <button type="button" className="board-card" onClick={() => go(`/tabelas/${board.id}`)}>
                 <div className="board-card-top">
                   <span className={`pill ${board.live ? "live" : "off"}`}>
@@ -431,7 +431,7 @@ function BoardDetail({
         </div>
       ) : null}
 
-      <div className={`boards-split ${tab} ${showMap ? "" : "no-map"}`}>
+      <div className={`boards-split ${tab} ${showMap ? "" : "no-map"}`} key={tab}>
         <div className="card boards-table-card">
           <div className="boards-table-head">
             <h2>Colocação</h2>
@@ -476,8 +476,12 @@ function BoardDetail({
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => (
-                    <LeaderboardRowView key={`${row.rank}-${row.players.join(",")}`} row={row} />
+                  {rows.map((row, index) => (
+                    <LeaderboardRowView
+                      key={`${row.rank}-${row.players.join(",")}`}
+                      row={row}
+                      delay={Math.min(index, 14) * 35}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -516,10 +520,10 @@ function BoardDetail({
   );
 }
 
-function LeaderboardRowView({ row }: { row: PublicLeaderboardRow }) {
+function LeaderboardRowView({ row, delay }: { row: PublicLeaderboardRow; delay: number }) {
   const medal = row.rank === 1 ? "gold" : row.rank === 2 ? "silver" : row.rank === 3 ? "bronze" : "";
   return (
-    <tr className={medal ? `medal-${medal}` : undefined}>
+    <tr className={medal ? `medal-${medal}` : undefined} style={{ animationDelay: `${delay}ms` }}>
       <td>#{row.rank}</td>
       <td>{row.players.length ? row.players.join(" · ") : "—"}</td>
       <td>{row.games}</td>

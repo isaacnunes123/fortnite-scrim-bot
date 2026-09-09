@@ -75,8 +75,8 @@ export function ClosedPage() {
           </p>
         ) : (
           <ul className="boards-grid">
-            {boards.map((board) => (
-              <li key={board.id}>
+            {boards.map((board, index) => (
+              <li key={board.id} style={{ animationDelay: `${Math.min(index, 8) * 55}ms` }}>
                 <a className="board-card" href={`/tabelas/${board.id}`}>
                   <div className="board-card-top">
                     <span className={`pill ${board.live ? "live" : "off"}`}>
