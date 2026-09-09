@@ -317,7 +317,7 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
               </div>
             </header>
             <MapBoard
-              imageUrl={template.mapImageUrl}
+              imageUrl={template.mapImageUrl || "/maps/island.png"}
               drops={template.drops}
               editor
               onCreate={(drop) => {

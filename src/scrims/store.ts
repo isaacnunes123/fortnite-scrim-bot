@@ -552,6 +552,16 @@ function getStore(): StoreFile {
 
 function persist(): void {
   const store = getStore();
+  store.templates = mergeTemplates([
+    readJsonFile<MapTemplate[]>(mapPresetsPath(dataDir()), []),
+    readJsonFile<MapTemplate[]>(mapPresetsPath(repoPresetsDir()), []),
+    store.templates,
+  ]);
+  store.scrimPresets = mergeLast([
+    readJsonFile<ScrimPreset[]>(scrimPresetsPath(dataDir()), []),
+    readJsonFile<ScrimPreset[]>(scrimPresetsPath(repoPresetsDir()), []),
+    store.scrimPresets,
+  ]);
   const filePath = storeFilePath();
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmp = `${filePath}.tmp`;
@@ -559,7 +569,9 @@ function persist(): void {
   fs.renameSync(tmp, filePath);
   tryWriteJsonFile(mapPresetsPath(dataDir()), store.templates);
   tryWriteJsonFile(scrimPresetsPath(dataDir()), store.scrimPresets);
-  tryWriteJsonFile(mapPresetsPath(repoPresetsDir()), store.templates);
+  if (store.templates.some((item) => item.drops.length > 0)) {
+    tryWriteJsonFile(mapPresetsPath(repoPresetsDir()), store.templates);
+  }
   tryWriteJsonFile(scrimPresetsPath(repoPresetsDir()), store.scrimPresets);
   publish({ type: "store" });
 }

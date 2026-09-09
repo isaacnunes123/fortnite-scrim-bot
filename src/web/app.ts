@@ -106,6 +106,8 @@ export async function createWebApp() {
   app.use(cookieParser(env.sessionSecret));
   app.use("/uploads", express.static(uploadDir));
   app.use("/preset-files", express.static(path.join(process.cwd(), "presets", "maps")));
+  app.use("/maps", express.static(path.join(process.cwd(), "web", "public", "maps")));
+  app.use("/maps", express.static(path.join(process.cwd(), "dist", "public", "maps")));
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, service: "fortnite-scrim-bot" });
@@ -807,8 +809,14 @@ export async function createWebApp() {
   if (builtUi) {
     app.use(express.static(publicDir));
     app.get(/.*/, (req, res) => {
-      if (req.path.startsWith("/api")) {
-        res.status(404).json({ error: "Rota não encontrada" });
+      if (
+        req.path.startsWith("/api") ||
+        req.path.startsWith("/maps") ||
+        req.path.startsWith("/uploads") ||
+        req.path.startsWith("/preset-files") ||
+        req.path.startsWith("/brand")
+      ) {
+        res.status(404).json({ error: "Arquivo não encontrado" });
         return;
       }
       res.sendFile(path.join(publicDir, "index.html"));

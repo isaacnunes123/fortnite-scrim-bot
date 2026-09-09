@@ -57,6 +57,7 @@ export function MapBoard({
   const src = imageUrl || DEFAULT_MAP;
   const viewportRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const mapImageRef = useRef<HTMLImageElement | null>(null);
   const zoomRef = useRef(1);
   const panRef = useRef({ x: 0, y: 0 });
@@ -74,6 +75,28 @@ export function MapBoard({
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+
+  function paintMap() {
+    const canvas = canvasRef.current;
+    const image = mapImageRef.current;
+    const viewport = viewportRef.current;
+    if (!canvas || !image?.naturalWidth || !viewport?.clientWidth) {
+      return;
+    }
+    if (canvas.width !== image.naturalWidth || canvas.height !== image.naturalHeight) {
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0);
+    syncViewLimits();
+  }
 
   function syncViewLimits() {
     const image = mapImageRef.current;
@@ -97,8 +120,13 @@ export function MapBoard({
     image.decoding = "async";
     image.onload = () => {
       mapImageRef.current = image;
-      syncViewLimits();
+      paintMap();
       window.setTimeout(() => fitPhoneIfNeeded(), 40);
+    };
+    image.onerror = () => {
+      if (src !== DEFAULT_MAP) {
+        image.src = DEFAULT_MAP;
+      }
     };
     image.src = src;
     return () => {
@@ -111,7 +139,7 @@ export function MapBoard({
     if (!viewport) {
       return;
     }
-    const ro = new ResizeObserver(() => syncViewLimits());
+    const ro = new ResizeObserver(() => paintMap());
     ro.observe(viewport);
     return () => ro.disconnect();
   }, [src]);
@@ -395,13 +423,7 @@ export function MapBoard({
               className={`map-board ${play ? "play" : ""}`}
               style={{ ["--map-zoom" as string]: String(zoom) }}
             >
-              <img
-                className="map-art"
-                src={src}
-                alt=""
-                draggable={false}
-                decoding="async"
-              />
+              <canvas className="map-art" ref={canvasRef} />
               <svg className="map-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
                 {drops.map((drop) =>
                   drop.vertices.length >= 3 ? (

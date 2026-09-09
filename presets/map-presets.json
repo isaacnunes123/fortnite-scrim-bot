@@ -1,1 +1,64 @@
-[]
+[
+  {
+    "id": "island-current",
+    "name": "Ilha atual",
+    "mapImageUrl": "/maps/island.png",
+    "drops": [
+      {
+        "id": "ca4a7646-adc6-4d54-87c9-3f87a78a2b52",
+        "name": "1",
+        "x": 24.83407079646018,
+        "y": 15.836264338358754,
+        "kind": "poi",
+        "vertices": [
+          {
+            "x": 18.75,
+            "y": 8.823061559942735
+          },
+          {
+            "x": 31.80309734513274,
+            "y": 16.288729033740434
+          },
+          {
+            "x": 23.949115044247787,
+            "y": 22.397002421393097
+          }
+        ],
+        "claimedByTeam": null,
+        "claimedByUserId": null,
+        "claimedByName": null,
+        "claimedByAvatarUrl": null
+      },
+      {
+        "id": "adea39df-24ed-420e-be56-35ff38a08f0a",
+        "name": "2",
+        "x": 61.47676991150443,
+        "y": 24.263419289842517,
+        "kind": "poi",
+        "vertices": [
+          {
+            "x": 58.35176991150443,
+            "y": 21.60518920447516
+          },
+          {
+            "x": 68.19690265486726,
+            "y": 19.455981901412184
+          },
+          {
+            "x": 65.43141592920354,
+            "y": 30.76759928595415
+          },
+          {
+            "x": 53.92699115044248,
+            "y": 25.224906767528587
+          }
+        ],
+        "claimedByTeam": null,
+        "claimedByUserId": null,
+        "claimedByName": null,
+        "claimedByAvatarUrl": null
+      }
+    ],
+    "createdAt": "2026-09-08T01:52:07.209Z"
+  }
+]
