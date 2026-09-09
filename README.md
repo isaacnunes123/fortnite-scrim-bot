@@ -32,12 +32,39 @@ npm run dev
 
 Sem `DISCORD_TOKEN` o site ainda abre; o card do bot fica offline até o token estar certo.
 
+Local só o Discord (sem site):
+
+```bash
+npm run build:bot
+npm run bot
+```
+
+Equivale a `node dist/bot.js`. Esse processo precisa de `DISCORD_TOKEN`.
+
 ## Produção (Vercel = site; bot = host 24/7)
 
 São dois papéis, de propósito:
 
-- **Vercel** (`https://buildscrims.online`) — site React + API serverless (`/api`). Tabelas públicas, detalhe da tabela, login da staff e CRUD de tabelas **não precisam do Railway**.
-- **Bot Discord** — o gateway do Discord **não roda na Vercel**. Sem um processo Node 24/7 (Fly.io, VPS, Railway, etc.), check-in, lobby, código da partida e mapa de drop ficam offline. O site e as tabelas continuam no ar.
+- **Vercel** (`https://buildscrims.online`) — site React + API serverless (`/api`). **Ready** na Vercel só quer dizer que o site compilou. Serverless **não** mantém o gateway do Discord.
+- **Bot Discord** — processo Node 24/7 no **mesmo GitHub repo**. Sem esse processo, o Discord mostra o bot offline e o painel diz **Bot Discord offline**. Tabelas e o site continuam no ar.
+
+### Subir só o bot (Fly.io / Render / Railway serviço `bot`)
+
+Não coloque o site de volta no Railway. O domínio público fica na Vercel.
+
+1. Build: `npm install && npm run build:bot`
+2. Start: `npm run bot` ou `node dist/bot.js`
+3. Variáveis no **host do bot** (as mesmas do `.env`):
+   - `DISCORD_TOKEN` (obrigatório)
+   - `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`
+   - `SESSION_SECRET` (o mesmo da Vercel, se for encaminhar o painel)
+   - `DATABASE_URL` (o mesmo Neon da Vercel — senão check-in e tabelas não compartilham dados)
+   - `ADMIN_ROLE_IDS`, `YUNITE_API_KEY`, `PUBLIC_BASE_URL=https://buildscrims.online`
+4. Na **Vercel**, opcional: `BOT_PROCESS_URL=https://SEU-HOST-DO-BOT` (sem barra no final). Aí o painel consulta `/health` desse host e encaminha “Criar scrim no Discord”.
+
+**Fly.io:** `fly launch` neste repo, start `node dist/bot.js`, cole as env. Desligue auto-stop (`min_machines_running = 1`) — se a máquina dormir, o Discord cai.  
+**Render:** Web Service ou Background Worker, build `npm install && npm run build:bot`, start `npm run bot`.  
+**Railway:** um serviço chamado **bot** (não o site). O `railway.toml` / Dockerfile já sobem `node dist/bot.js`.
 
 A Vercel **não** deve publicar a pasta `dist` inteira. Se o domínio mostrar código-fonte preto (`startBot` / `createWebApp`), o Output Directory está em `dist` em vez de `dist/public`.
 
@@ -62,6 +89,7 @@ O frontend usa caminhos relativos (`/api/...`, `/tabelas`). A Vercel serve o HTM
    - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_TOKEN`, `DISCORD_GUILD_ID`
    - `YUNITE_API_KEY`
    - `DATABASE_URL` (Neon — veja abaixo)
+   - `BOT_PROCESS_URL` (URL do host Node do bot, se já existir)
 5. Discord Developer Portal → OAuth2 → Redirects, cadastre:
    - `https://buildscrims.online/api/auth/discord/callback`
 6. Confira `https://buildscrims.online/api/health` — tem que voltar `"service":"fortnite-scrim-bot"` e `"host":"vercel"`.
@@ -74,7 +102,7 @@ O frontend usa caminhos relativos (`/api/...`, `/tabelas`). A Vercel serve o HTM
 
 Sem `DATABASE_URL`, `/tabelas` ainda abre (não dá mais “Falha na requisição”), mas o que a staff salvar some no próximo cold start.
 
-Com Docker (só o bot + Express 24/7):
+Com Docker (só o bot, sem o site):
 
 ```bash
 docker build -t fortnite-scrim-bot .

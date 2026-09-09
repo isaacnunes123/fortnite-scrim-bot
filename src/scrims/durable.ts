@@ -68,3 +68,52 @@ export async function saveRemoteStore(payload: unknown): Promise<void> {
     SET payload = EXCLUDED.payload, updated_at = now()
   `;
 }
+
+const HEARTBEAT_ID = "discord";
+let heartbeatTableReady = false;
+
+async function ensureHeartbeatTable(db: Sql): Promise<void> {
+  if (heartbeatTableReady) {
+    return;
+  }
+  await db`CREATE TABLE IF NOT EXISTS bot_heartbeat (
+    id TEXT PRIMARY KEY,
+    payload JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`;
+  heartbeatTableReady = true;
+}
+
+/** Status do gateway. Tabela à parte — nunca mexe em app_store. */
+export async function saveBotHeartbeat(payload: unknown): Promise<void> {
+  if (!usesRemoteStore()) {
+    return;
+  }
+  const db = client();
+  await ensureHeartbeatTable(db);
+  const json = JSON.stringify(payload);
+  await db`
+    INSERT INTO bot_heartbeat (id, payload, updated_at)
+    VALUES (${HEARTBEAT_ID}, ${json}::jsonb, now())
+    ON CONFLICT (id) DO UPDATE
+    SET payload = EXCLUDED.payload, updated_at = now()
+  `;
+}
+
+export async function loadBotHeartbeat(): Promise<{ payload: unknown; updatedAt: string } | null> {
+  if (!usesRemoteStore()) {
+    return null;
+  }
+  const db = client();
+  await ensureHeartbeatTable(db);
+  const rows = (await db`
+    SELECT payload, updated_at FROM bot_heartbeat WHERE id = ${HEARTBEAT_ID} LIMIT 1
+  `) as Array<{ payload: unknown; updated_at: string | Date }>;
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+  const updatedAt =
+    row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at ?? "");
+  return { payload: row.payload, updatedAt };
+}

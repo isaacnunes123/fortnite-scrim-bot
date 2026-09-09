@@ -1,1 +1,1 @@
-web: NODE_ENV=production npm start
+bot: node dist/bot.js

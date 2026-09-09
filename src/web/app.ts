@@ -52,7 +52,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export async function createWebApp() {
+export async function createWebApp(options: { serveUi?: boolean } = {}) {
   const app = express();
   setupExpress(app);
   app.use("/uploads", express.static(uploadDir));
@@ -96,7 +96,7 @@ export async function createWebApp() {
     }
     const client = getDiscordClient();
     if (!client?.isReady()) {
-      res.status(503).json({ error: "Bot offline" });
+      res.status(503).json({ error: "Bot Discord offline" });
       return;
     }
     res.json({ guilds: listBotGuilds(client) });
@@ -109,7 +109,7 @@ export async function createWebApp() {
     }
     const client = getDiscordClient();
     if (!client?.isReady()) {
-      res.status(503).json({ error: "Bot offline" });
+      res.status(503).json({ error: "Bot Discord offline" });
       return;
     }
     const guild = getGuild(client);
@@ -169,7 +169,7 @@ export async function createWebApp() {
     }
     const client = getDiscordClient();
     if (!client?.isReady()) {
-      res.status(503).json({ error: "Bot offline" });
+      res.status(503).json({ error: "Bot Discord offline" });
       return;
     }
     const name = String(req.body?.name ?? "").trim();
@@ -497,7 +497,7 @@ export async function createWebApp() {
     }
     const client = getDiscordClient();
     if (!client?.isReady()) {
-      res.status(503).json({ error: "Bot offline" });
+      res.status(503).json({ error: "Bot Discord offline" });
       return;
     }
     const scrim = getScrim(String(req.params.id));
@@ -628,7 +628,7 @@ export async function createWebApp() {
     }
   });
 
-  if (process.env.VERCEL) {
+  if (process.env.VERCEL || options.serveUi === false) {
     return app;
   }
 

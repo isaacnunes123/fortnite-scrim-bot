@@ -7,9 +7,12 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json && vite build",
+    "build:bot": "tsc -p tsconfig.json",
     "build:web": "vite build",
     "vercel-build": "vite build",
     "start": "node dist/index.js",
+    "bot": "node dist/bot.js",
+    "bot:dev": "tsx watch src/bot.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "engines": {

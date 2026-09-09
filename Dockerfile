@@ -3,7 +3,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install
 COPY . .
-RUN npm run build
+RUN npm run build:bot
 
 FROM node:22-alpine
 WORKDIR /app
@@ -12,6 +12,7 @@ ENV DATA_DIR=/data
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/presets ./presets
 RUN mkdir -p /data
 EXPOSE 3000
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/bot.js"]

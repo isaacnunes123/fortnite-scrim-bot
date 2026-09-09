@@ -1,15 +1,13 @@
-# Site público: Vercel (buildscrims.online) serve o Vite e faz proxy de /api para este serviço.
-# No Railway Variables:
-#   PUBLIC_BASE_URL=https://buildscrims.online
-# Discord OAuth2 Redirect:
-#   https://buildscrims.online/api/auth/discord/callback
+# Serviço do BOT Discord (gateway 24/7). Não serve o site público.
+# Site: Vercel → buildscrims.online
+# Crie um serviço Railway chamado "bot" (não o domínio do site) e use este start.
 
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "node dist/index.js"
-healthcheckPath = "/api/health"
+startCommand = "node dist/bot.js"
+healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"

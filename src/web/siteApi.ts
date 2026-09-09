@@ -44,6 +44,7 @@ import {
   isStaffSession,
   requireAuth,
 } from "./staffAuth.js";
+import { readFreshBotHeartbeat } from "../bot/heartbeat.js";
 
 export type BotStatusPayload = {
   configured: boolean;
@@ -140,8 +141,99 @@ export function offlineBotStatus(): BotStatusPayload {
     id: null,
     guildCount: 0,
     uptimeMs: null,
-    note: "O bot Discord não roda na Vercel. Use um host Node 24/7 (Fly, VPS, etc.).",
   };
+}
+
+function asBotStatusPayload(value: unknown): BotStatusPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    configured: Boolean(record.configured ?? record.ready),
+    ready: Boolean(record.ready),
+    username: typeof record.username === "string" ? record.username : null,
+    id: typeof record.id === "string" ? record.id : null,
+    guildCount: Number(record.guildCount) || 0,
+    uptimeMs: record.uptimeMs == null ? null : Number(record.uptimeMs) || null,
+  };
+}
+
+async function fetchBotProcessStatus(): Promise<BotStatusPayload | null> {
+  if (!env.botProcessUrl) {
+    return null;
+  }
+  try {
+    const response = await fetch(`${env.botProcessUrl}/health`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return asBotStatusPayload(await response.json());
+  } catch {
+    return null;
+  }
+}
+
+async function resolveBotStatus(local?: BotStatusPayload): Promise<BotStatusPayload> {
+  if (local?.ready) {
+    return local;
+  }
+  const remote = await fetchBotProcessStatus();
+  if (remote?.ready) {
+    return remote;
+  }
+  const beat = await readFreshBotHeartbeat();
+  if (beat?.ready) {
+    return beat;
+  }
+  return local ?? offlineBotStatus();
+}
+
+async function proxyToBotProcess(req: Request, res: Response): Promise<boolean> {
+  if (!env.botProcessUrl) {
+    return false;
+  }
+  try {
+    const url = new URL(req.originalUrl || req.url, `${env.botProcessUrl}/`);
+    const headers = new Headers();
+    if (req.headers.cookie) {
+      headers.set("cookie", req.headers.cookie);
+    }
+    const contentType = req.headers["content-type"];
+    if (contentType) {
+      headers.set("content-type", contentType);
+    }
+    const init: RequestInit = {
+      method: req.method,
+      headers,
+      redirect: "manual",
+      signal: AbortSignal.timeout(25_000),
+    };
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      if (Buffer.isBuffer(req.body)) {
+        init.body = new Uint8Array(req.body);
+      } else if (typeof req.body === "string") {
+        init.body = req.body;
+      } else if (req.body != null) {
+        init.body = JSON.stringify(req.body);
+        if (!headers.has("content-type")) {
+          headers.set("content-type", "application/json");
+        }
+      }
+    }
+    const upstream = await fetch(url, init);
+    res.status(upstream.status);
+    const type = upstream.headers.get("content-type");
+    if (type) {
+      res.setHeader("Content-Type", type);
+    }
+    res.send(Buffer.from(await upstream.arrayBuffer()));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function setupExpress(app: Express): void {
@@ -246,8 +338,8 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
     await finishDiscordLogin(req, res);
   });
 
-  app.get("/api/bot/status", requireAuth, (_req, res) => {
-    res.json(options.botStatus?.() ?? offlineBotStatus());
+  app.get("/api/bot/status", requireAuth, async (_req, res) => {
+    res.json(await resolveBotStatus(options.botStatus?.()));
   });
 
   app.get("/api/logs", requireAuth, (req, res) => {
@@ -586,11 +678,11 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
   });
 }
 
-export function botUnavailable(_req: Request, res: Response): void {
-  res.status(503).json({
-    error:
-      "Esta ação precisa do bot Discord em um host Node 24/7 (Fly.io, VPS, etc.). Tabelas e o site público funcionam só com a Vercel.",
-  });
+export async function botUnavailable(req: Request, res: Response): Promise<void> {
+  if (await proxyToBotProcess(req, res)) {
+    return;
+  }
+  res.status(503).json({ error: "Bot Discord offline" });
 }
 
 export function createSiteApp(): Express {

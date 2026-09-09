@@ -15,6 +15,8 @@ export const env = {
     (process.env.PUBLIC_BASE_URL ?? "").startsWith("https://") ||
     (process.env.DISCORD_REDIRECT_URI ?? "").startsWith("https://"),
   yuniteApiKey: process.env.YUNITE_API_KEY?.trim() ?? "",
+  /** Host Node 24/7 do gateway (Fly/Render/Railway bot). A Vercel só consulta/encaminha. */
+  botProcessUrl: (process.env.BOT_PROCESS_URL ?? "").trim().replace(/\/$/, ""),
 };
 
 export function cookieOptions(maxAge: number) {

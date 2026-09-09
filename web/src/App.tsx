@@ -213,7 +213,7 @@ export function App() {
             Presets
           </button>
           <span className={`pill ${online ? "ok" : "off"}`}>
-            {online ? "Bot online" : "Bot offline"}
+            {online ? "Bot online" : "Bot Discord offline"}
           </span>
           <button className="btn secondary" type="button" onClick={onLogout}>
             Sair
@@ -399,6 +399,7 @@ function Home({
             Isso cria a categoria no Discord (check-in, mapa, código, chat, saída, fill e admin).
             Depois, no painel da scrim, você define até quando a saída é livre.
           </p>
+          {!status?.ready ? <p className="error">Bot Discord offline</p> : null}
           {error ? <p className="error">{error}</p> : null}
           <label htmlFor="scrim-preset">Carregar preset de scrim</label>
           <select
@@ -628,7 +629,7 @@ function Home({
           >
             Salvar preset de scrim
           </button>
-          <button className="btn" type="submit" disabled={saving}>
+          <button className="btn" type="submit" disabled={saving || !status?.ready}>
             {saving ? "Criando no Discord…" : "Criar scrim no Discord"}
           </button>
         </form>

@@ -3,6 +3,7 @@ import { handleChatCommand, registerSlashCommands } from "./commands.js";
 import { handleInteraction } from "./interactions.js";
 import { env } from "../env.js";
 import { enforceHomeGuild } from "./guild.js";
+import { pulseBotHeartbeat, startBotHeartbeat, stopBotHeartbeat } from "./heartbeat.js";
 
 export type BotStatus = {
   configured: boolean;
@@ -57,11 +58,24 @@ export async function startBot(token: string): Promise<Client | null> {
   client.once(Events.ClientReady, (readyClient) => {
     runtime.readyAt = Date.now();
     console.log(`[bot] Conectado como ${readyClient.user.tag}`);
+    startBotHeartbeat(getBotStatus);
+    pulseBotHeartbeat(getBotStatus());
     enforceHomeGuild(readyClient)
       .then(() => registerSlashCommands(readyClient))
       .catch((error) => {
         console.error("[bot] Falha ao registrar comandos:", error);
       });
+  });
+
+  client.on(Events.ShardDisconnect, () => {
+    runtime.readyAt = null;
+    pulseBotHeartbeat(getBotStatus());
+  });
+
+  client.on(Events.Invalidated, () => {
+    runtime.readyAt = null;
+    stopBotHeartbeat();
+    pulseBotHeartbeat(getBotStatus());
   });
 
   client.on(Events.GuildCreate, (guild) => {

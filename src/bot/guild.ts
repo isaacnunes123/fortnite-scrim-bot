@@ -51,7 +51,7 @@ export async function resolveDiscordPlayer(
 }> {
   const guild = getGuild(client, guildId);
   if (!guild) {
-    throw new Error("Bot offline ou sem servidor");
+    throw new Error("Bot Discord offline ou sem servidor");
   }
 
   const cleaned = query.trim().replace(/^<@!?/, "").replace(/>$/, "");
