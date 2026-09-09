@@ -739,9 +739,9 @@ select:focus {
 
 .drop-poly.taken,
 .drop-poly.full {
-  fill: rgba(255, 36, 36, 0.32);
-  stroke: #ff2a2a;
-  stroke-width: 0.28;
+  fill: rgba(255, 28, 28, 0.22);
+  stroke: #ff1a1a;
+  stroke-width: 0.55;
 }
 
 .drop-poly.mine {
@@ -836,69 +836,51 @@ select:focus {
 
 .drop-markers {
   position: absolute;
-  z-index: 3;
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  transform: translate(-50%, -42%);
-  pointer-events: none;
-}
-
-.map-board.zoomed .drop-markers {
+  z-index: 4;
   display: flex;
-  animation: marker-pop 0.28s var(--ease);
-}
-
-@keyframes marker-pop {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -42%) scale(0.7);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, -42%) scale(1);
-  }
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 0 8px;
+  transform: translate(-50%, -50%) scale(calc(1 / var(--map-zoom, 1)));
+  transform-origin: center center;
+  pointer-events: none;
 }
 
 .drop-marker {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
+  gap: 2px;
+  margin: 0 -2px;
 }
 
 .drop-marker-face {
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid #fff;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.65);
+  border: 2.5px solid #ff1a1a;
+  box-shadow: 0 0 0 1px #3a0000, 0 2px 8px rgba(0, 0, 0, 0.55);
   background: #111;
 }
 
 .drop-marker-name {
-  max-width: 120px;
   color: #fff;
-  font-size: 12px;
+  font-family: "Barlow Condensed", Impact, sans-serif;
+  font-size: 16px;
   font-weight: 800;
-  line-height: 1.05;
+  line-height: 0.95;
   text-align: center;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-shadow:
-    -1px -1px 0 #000,
-    1px -1px 0 #000,
-    -1px 1px 0 #000,
-    1px 1px 0 #000,
-    0 0 5px #000;
+  -webkit-text-stroke: 3.5px #000;
+  paint-order: stroke fill;
 }
 
-.map-board.zoomed .drop-pin.has-claims {
+.drop-pin.has-claims {
   opacity: 0;
   pointer-events: none;
 }

@@ -390,7 +390,8 @@ export function MapBoard({
           >
             <div
               ref={boardRef}
-              className={`map-board ${play ? "play" : ""} ${zoom >= 1.2 ? "zoomed" : ""}`}
+              className={`map-board ${play ? "play" : ""}`}
+              style={{ ["--map-zoom" as string]: String(zoom) }}
             >
               <img
                 className="map-art"
