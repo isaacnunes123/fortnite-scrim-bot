@@ -1,3 +1,4 @@
+# Uso local (`docker build`). No Railway o builder é Nixpacks via railway.json (Build = npm run build:bot, sem Pre-deploy).
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./

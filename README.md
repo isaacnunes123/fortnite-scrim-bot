@@ -64,7 +64,14 @@ Não coloque o site de volta no Railway. O domínio público fica na Vercel.
 
 **Fly.io:** `fly launch` neste repo, start `node dist/bot.js`, cole as env. Desligue auto-stop (`min_machines_running = 1`) — se a máquina dormir, o Discord cai.  
 **Render:** Web Service ou Background Worker, build `npm install && npm run build:bot`, start `npm run bot`.  
-**Railway:** um serviço chamado **bot** (não o site). O `railway.toml` / Dockerfile já sobem `node dist/bot.js`.
+**Railway:** um serviço chamado **bot** (não o site). Painel do serviço:
+
+- **Settings → Deploy → Pre-deploy Command:** apague (vazio). `npm run build:bot` aqui é o que quebra o deploy (segunda compilação; na imagem Docker nem existe `tsc`/`src`).
+- **Settings → Build → Builder:** Nixpacks (não Dockerfile)
+- **Settings → Build → Build Command:** `npm run build:bot`
+- **Settings → Deploy → Start Command:** `node dist/bot.js`
+
+O `railway.json` já define isso. Depois de salvar, redeploy.
 
 A Vercel **não** deve publicar a pasta `dist` inteira. Se o domínio mostrar código-fonte preto (`startBot` / `createWebApp`), o Output Directory está em `dist` em vez de `dist/public`.
 
