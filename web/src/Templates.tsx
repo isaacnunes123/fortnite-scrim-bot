@@ -249,9 +249,8 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
                 />
                 <p className="muted">
                   1. Desenhe os drops no mapa (eles ganham número sozinhos). 2. Clique em{" "}
-                  <b>Salvar preset</b> — isso grava na pasta do sistema, então não some no próximo
-                  deploy. 3. Use uma imagem limpa da ilha (PNG 3000px+). Depois, na home, escolha
-                  este preset ao criar a scrim.
+                  <b>Salvar preset</b>. 3. Use uma imagem limpa da ilha (PNG 3000px+). Depois, na
+                  home, escolha este preset ao criar a scrim.
                 </p>
                 <label htmlFor="template-contests">Disputas padrão deste mapa</label>
                 <input

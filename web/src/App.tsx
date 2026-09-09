@@ -628,11 +628,6 @@ function Home({
           >
             Salvar preset de scrim
           </button>
-          <p className="muted">
-            O preset fica na pasta do sistema e não some quando o código atualiza. Com
-            <code>DATABASE_URL</code> na Vercel (Neon), tabelas e presets persistem. O bot Discord
-            continua precisando de um host Node 24/7.
-          </p>
           <button className="btn" type="submit" disabled={saving}>
             {saving ? "Criando no Discord…" : "Criar scrim no Discord"}
           </button>
