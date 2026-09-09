@@ -1,8 +1,9 @@
+import { randomUUID } from "node:crypto";
 import cookieParser from "cookie-parser";
 import express, { type Express, type Request, type Response } from "express";
 import { clearCookieOptions, env } from "../env.js";
 import { discordRedirectUri, isAllowedPublicHost, publicBaseUrl } from "../scrims/links.js";
-import { resolvePublicMapUrl, savePresetMap, saveUploadedMap } from "../scrims/maps.js";
+import { persistMapImage, readPersistedMap, resolvePublicMapUrl } from "../scrims/maps.js";
 import { usesRemoteStore } from "../scrims/durable.js";
 import {
   ensureStore,
@@ -562,14 +563,25 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
     res.json({ ok: true });
   });
 
+  app.get("/api/map-images/:id", async (req, res) => {
+    const image = await readPersistedMap(String(req.params.id ?? ""));
+    if (!image) {
+      res.status(404).json({ error: "Imagem do mapa não encontrada" });
+      return;
+    }
+    res.setHeader("Content-Type", image.mime);
+    res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
+    res.send(image.buffer);
+  });
+
   app.post(
     "/api/templates/:id/map",
     requireAuth,
     express.raw({
-      type: ["image/png", "image/jpeg", "image/webp", "application/octet-stream"],
-      limit: "32mb",
+      type: ["image/png", "image/jpeg", "image/jpg", "image/webp", "application/octet-stream"],
+      limit: "8mb",
     }),
-    (req, res) => {
+    async (req, res) => {
       const template = getTemplate(String(req.params.id));
       if (!template) {
         res.status(404).json({ error: "Preset não encontrado" });
@@ -577,24 +589,28 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
       }
       const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from([]);
       if (buffer.length < 32) {
-        res.status(400).json({ error: "Arquivo de mapa inválido" });
+        res.status(400).json({
+          error:
+            "Arquivo de mapa inválido ou vazio. Na Vercel o limite é ~4 MB — use JPG se o PNG for pesado.",
+        });
         return;
       }
       const mime = String(req.headers["content-type"] ?? "image/png");
       try {
-        const uploaded = saveUploadedMap(buffer, mime);
-        let mapImageUrl = uploaded;
-        try {
-          mapImageUrl = savePresetMap(template.id, buffer, mime);
-        } catch {
-          mapImageUrl = uploaded;
-        }
-        res.json({ template: withLiveMap(patchTemplate(template.id, { mapImageUrl })) });
-      } catch {
-        res.status(503).json({
-          error:
-            "Upload de mapa não persiste na Vercel. Use um host 24/7 ou um arquivo já no repositório.",
+        const mapImageUrl = await persistMapImage({
+          id: `tpl-${template.id}`,
+          buffer,
+          mime,
+          fileStem: template.id,
         });
+        const updated = patchTemplate(template.id, { mapImageUrl });
+        await commitJson(res, 200, { template: withLiveMap(updated) });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Não foi possível gravar a imagem do mapa";
+        res.status(503).json({ error: message });
       }
     },
   );
@@ -737,23 +753,30 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
     "/api/maps/upload",
     requireAuth,
     express.raw({
-      type: ["image/png", "image/jpeg", "image/webp", "application/octet-stream"],
-      limit: "32mb",
+      type: ["image/png", "image/jpeg", "image/jpg", "image/webp", "application/octet-stream"],
+      limit: "8mb",
     }),
-    (req, res) => {
+    async (req, res) => {
       const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from([]);
       if (buffer.length < 32) {
-        res.status(400).json({ error: "Arquivo de mapa inválido" });
+        res.status(400).json({
+          error:
+            "Arquivo de mapa inválido ou vazio. Na Vercel o limite é ~4 MB — use JPG se o PNG for pesado.",
+        });
         return;
       }
       const mime = String(req.headers["content-type"] ?? "image/png");
       try {
-        const url = saveUploadedMap(buffer, mime);
-        res.json({ url });
-      } catch {
-        res.status(503).json({
-          error: "Upload de mapa não persiste na Vercel. Use um host Node 24/7 para arquivos.",
+        const url = await persistMapImage({
+          id: `upl-${randomUUID()}`,
+          buffer,
+          mime,
         });
+        res.json({ url });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Não foi possível gravar a imagem do mapa";
+        res.status(503).json({ error: message });
       }
     },
   );
@@ -791,6 +814,13 @@ export function createSiteApp(): Express {
   app.use((error: unknown, _req: Request, res: Response, next: (err?: unknown) => void) => {
     if (res.headersSent) {
       next(error);
+      return;
+    }
+    const payload = error as { type?: string; status?: number };
+    if (payload?.type === "entity.too.large" || payload?.status === 413) {
+      res.status(413).json({
+        error: "A imagem é grande demais (máx. ~4 MB na Vercel). Envie um JPG ou um PNG mais leve.",
+      });
       return;
     }
     const message = error instanceof Error ? error.message : "Erro interno";

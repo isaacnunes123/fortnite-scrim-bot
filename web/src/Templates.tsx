@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { api, type DropSpot, type MapTemplate } from "./api";
+import { api, prepareMapUpload, type DropSpot, type MapTemplate } from "./api";
 import { MapBoard } from "./MapBoard";
 
 export function TemplatesPage({ onBack }: { onBack: () => void }) {
@@ -249,8 +249,8 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
                 />
                 <p className="muted">
                   1. Desenhe os drops no mapa (eles ganham número sozinhos). 2. Clique em{" "}
-                  <b>Salvar preset</b>. 3. Use uma imagem limpa da ilha (PNG 3000px+). Depois, na
-                  home, escolha este preset ao criar a scrim.
+                  <b>Salvar preset</b>. 3. Use <b>Trocar imagem</b> com PNG/JPG da ilha (JPG se
+                  passar de ~4 MB). Depois, na home, escolha este preset ao criar a scrim.
                 </p>
                 <label htmlFor="template-contests">Disputas padrão deste mapa</label>
                 <input
@@ -289,29 +289,46 @@ export function TemplatesPage({ onBack }: { onBack: () => void }) {
                   hidden
                   onChange={async (event) => {
                     const file = event.target.files?.[0];
-                    if (!file) {
+                    event.target.value = "";
+                    if (!file || !template) {
                       return;
                     }
-                    const response = await fetch(`/api/templates/${template.id}/map`, {
-                      method: "POST",
-                      credentials: "include",
-                      headers: { "Content-Type": file.type || "image/png" },
-                      body: await file.arrayBuffer(),
-                    });
-                    const payload = (await response.json()) as {
-                      template?: MapTemplate;
-                      error?: string;
-                    };
-                    if (!response.ok) {
-                      setError(payload.error || "Falha ao enviar mapa");
-                      return;
-                    }
-                    if (payload.template) {
+                    setError(null);
+                    setSaving(true);
+                    try {
+                      const prepared = await prepareMapUpload(file);
+                      const response = await fetch(`/api/templates/${template.id}/map`, {
+                        method: "POST",
+                        credentials: "include",
+                        headers: { "Content-Type": prepared.type },
+                        body: prepared.body,
+                      });
+                      const payload = (await response.json().catch(() => ({}))) as {
+                        template?: MapTemplate;
+                        error?: string;
+                      };
+                      if (response.status === 413) {
+                        throw new Error(
+                          "A imagem é grande demais (máx. ~4 MB na Vercel). Envie um JPG.",
+                        );
+                      }
+                      if (!response.ok || !payload.template) {
+                        throw new Error(payload.error || "Falha ao enviar mapa");
+                      }
+                      const next = payload.template;
                       setTemplate((current) =>
-                        current
-                          ? { ...current, mapImageUrl: payload.template!.mapImageUrl }
-                          : payload.template!,
+                        current ? { ...current, mapImageUrl: next.mapImageUrl } : next,
                       );
+                      setTemplates((current) =>
+                        current.map((item) =>
+                          item.id === next.id ? { ...item, mapImageUrl: next.mapImageUrl } : item,
+                        ),
+                      );
+                      setSaved("Imagem do mapa atualizada.");
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "Falha ao enviar mapa");
+                    } finally {
+                      setSaving(false);
                     }
                   }}
                 />

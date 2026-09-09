@@ -973,11 +973,21 @@ export function patchTemplate(id: string, patch: Partial<MapTemplate>): MapTempl
   }
   const current = normalizeTemplate(store.templates[index]!);
   const next = normalizeTemplate({ ...current, ...patch, id });
+  const imageChanged =
+    patch.mapImageUrl != null &&
+    patch.mapImageUrl.trim() !== "" &&
+    patch.mapImageUrl !== current.mapImageUrl;
   store.templates[index] = next;
-  if (next.drops.length > 0) {
-    for (const scrim of store.scrims) {
-      if (scrim.templateId === id && scrim.drops.length === 0) {
-        scrim.drops = cloneDrops(next.drops);
+  for (const scrim of store.scrims) {
+    if (scrim.templateId !== id) {
+      continue;
+    }
+    if (imageChanged) {
+      scrim.mapImageUrl = next.mapImageUrl;
+    }
+    if (next.drops.length > 0 && scrim.drops.length === 0) {
+      scrim.drops = cloneDrops(next.drops);
+      if (!imageChanged) {
         scrim.mapImageUrl = next.mapImageUrl || scrim.mapImageUrl;
       }
     }

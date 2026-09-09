@@ -6,7 +6,12 @@ import { getBotStatus, getDiscordClient } from "../bot/client.js";
 import { getGuild, listBotGuilds, notifyInvite, resolveDiscordPlayer, rosterForScrim } from "../bot/guild.js";
 import { subscribe } from "../scrims/live.js";
 import { env } from "../env.js";
-import { DEFAULT_MAP_URL, resolvePublicMapUrl, saveUploadedMap, uploadDir } from "../scrims/maps.js";
+import {
+  DEFAULT_MAP_URL,
+  persistMapImage,
+  resolvePublicMapUrl,
+  uploadDir,
+} from "../scrims/maps.js";
 import { saveYuniteTournamentId } from "./publicTables.js";
 import { resolveMapAccess } from "./dropAuth.js";
 import { isStaffSession } from "./staffAuth.js";
@@ -437,7 +442,7 @@ export async function createWebApp(options: { serveUi?: boolean } = {}) {
   app.post(
     "/api/scrims/:id/map",
     express.raw({
-      type: ["image/png", "image/jpeg", "image/webp", "application/octet-stream"],
+      type: ["image/png", "image/jpeg", "image/jpg", "image/webp", "application/octet-stream"],
       limit: "32mb",
     }),
     async (req, res) => {
@@ -456,8 +461,16 @@ export async function createWebApp(options: { serveUi?: boolean } = {}) {
         return;
       }
       const mime = String(req.headers["content-type"] ?? "image/png");
-      const mapImageUrl = saveUploadedMap(buffer, mime);
-      res.json({ scrim: patchScrim(scrim.id, { mapImageUrl }) });
+      try {
+        const mapImageUrl = await persistMapImage({
+          id: `scrim-${scrim.id}`,
+          buffer,
+          mime,
+        });
+        res.json({ scrim: patchScrim(scrim.id, { mapImageUrl }) });
+      } catch (error) {
+        fail(res, error, "Não foi possível gravar a imagem do mapa");
+      }
     },
   );
 

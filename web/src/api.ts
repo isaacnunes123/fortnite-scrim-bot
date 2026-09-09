@@ -21,14 +21,61 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return data;
 }
 
+const VERCEL_SAFE_MAP_BYTES = 3_800_000;
+
+export async function prepareMapUpload(file: File): Promise<{ body: ArrayBuffer; type: string }> {
+  if (file.size <= VERCEL_SAFE_MAP_BYTES) {
+    return { body: await file.arrayBuffer(), type: file.type || "image/png" };
+  }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxEdge = 3600;
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return { body: await file.arrayBuffer(), type: file.type || "image/png" };
+    }
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+    let quality = 0.84;
+    let blob: Blob | null = null;
+    for (let i = 0; i < 4; i += 1) {
+      blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, "image/jpeg", quality);
+      });
+      if (blob && blob.size <= VERCEL_SAFE_MAP_BYTES) {
+        break;
+      }
+      quality -= 0.12;
+    }
+    if (!blob) {
+      return { body: await file.arrayBuffer(), type: file.type || "image/png" };
+    }
+    return { body: await blob.arrayBuffer(), type: "image/jpeg" };
+  } catch {
+    return { body: await file.arrayBuffer(), type: file.type || "image/png" };
+  }
+}
+
 export async function uploadMap(file: File, path = "/api/maps/upload"): Promise<string> {
+  const prepared = await prepareMapUpload(file);
   const response = await fetch(path, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": file.type || "image/png" },
-    body: await file.arrayBuffer(),
+    headers: { "Content-Type": prepared.type },
+    body: prepared.body,
   });
   const data = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+  if (response.status === 413) {
+    throw new Error("A imagem é grande demais (máx. ~4 MB na Vercel). Envie um JPG.");
+  }
   if (!response.ok || !data.url) {
     throw new Error(data.error || "Falha ao enviar o mapa");
   }

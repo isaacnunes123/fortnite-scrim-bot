@@ -117,3 +117,51 @@ export async function loadBotHeartbeat(): Promise<{ payload: unknown; updatedAt:
     row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at ?? "");
   return { payload: row.payload, updatedAt };
 }
+
+let mapImagesReady = false;
+
+async function ensureMapImagesTable(db: Sql): Promise<void> {
+  if (mapImagesReady) {
+    return;
+  }
+  await db`CREATE TABLE IF NOT EXISTS map_images (
+    id TEXT PRIMARY KEY,
+    mime TEXT NOT NULL,
+    data_url TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`;
+  mapImagesReady = true;
+}
+
+/** Imagem do mapa fora do app_store — não infla presets/drops. */
+export async function saveRemoteMapImage(id: string, mime: string, dataUrl: string): Promise<void> {
+  if (!usesRemoteStore()) {
+    throw new Error("DATABASE_URL não configurada");
+  }
+  const db = client();
+  await ensureMapImagesTable(db);
+  await db`
+    INSERT INTO map_images (id, mime, data_url, updated_at)
+    VALUES (${id}, ${mime}, ${dataUrl}, now())
+    ON CONFLICT (id) DO UPDATE
+    SET mime = EXCLUDED.mime, data_url = EXCLUDED.data_url, updated_at = now()
+  `;
+}
+
+export async function loadRemoteMapImage(
+  id: string,
+): Promise<{ mime: string; dataUrl: string } | null> {
+  if (!usesRemoteStore()) {
+    return null;
+  }
+  const db = client();
+  await ensureMapImagesTable(db);
+  const rows = (await db`
+    SELECT mime, data_url FROM map_images WHERE id = ${id} LIMIT 1
+  `) as Array<{ mime: string; data_url: string }>;
+  const row = rows[0];
+  if (!row?.data_url) {
+    return null;
+  }
+  return { mime: row.mime, dataUrl: row.data_url };
+}
