@@ -286,6 +286,8 @@ function Home({
   const [scrimPresetId, setScrimPresetId] = useState("");
   const [scrimPresetName, setScrimPresetName] = useState("");
   const [roles, setRoles] = useState<DiscordRole[]>([]);
+  const [rolesError, setRolesError] = useState<string | null>(null);
+  const [rolesLoading, setRolesLoading] = useState(true);
   const [accessRoleIds, setAccessRoleIds] = useState<string[]>([]);
   const [staffRoleIds, setStaffRoleIds] = useState<string[]>([]);
   const [windows, setWindows] = useState<PriorityWindow[]>([
@@ -340,9 +342,19 @@ function Home({
   useEffect(() => {
     setAccessRoleIds([]);
     setStaffRoleIds([]);
+    setRolesLoading(true);
     api<{ roles: DiscordRole[] }>("/api/discord/roles")
-      .then((data) => setRoles(data.roles))
-      .catch(() => setRoles([]));
+      .then((data) => {
+        setRoles(data.roles ?? []);
+        setRolesError(null);
+      })
+      .catch((err) => {
+        setRoles([]);
+        setRolesError(
+          err instanceof Error ? err.message : "Não foi possível carregar os cargos do Discord.",
+        );
+      })
+      .finally(() => setRolesLoading(false));
   }, []);
 
   function toggle(list: string[], id: string, set: (next: string[]) => void) {
@@ -523,31 +535,50 @@ function Home({
             </>
           ) : null}
           <p className="muted">Quem pode fazer check-in (cargos da divisão)</p>
-          <div className="role-list">
-            {roles.map((role) => (
-              <label key={role.id} className="role-item">
-                <input
-                  type="checkbox"
-                  checked={accessRoleIds.includes(role.id)}
-                  onChange={() => toggle(accessRoleIds, role.id, setAccessRoleIds)}
-                />
-                {role.name}
-              </label>
-            ))}
-          </div>
+          {rolesLoading ? (
+            <p className="muted">Carregando cargos do Discord…</p>
+          ) : rolesError ? (
+            <p className="muted">{rolesError}</p>
+          ) : roles.length === 0 ? (
+            <p className="muted">
+              Nenhum cargo encontrado neste servidor. O bot precisa estar no servidor.
+            </p>
+          ) : (
+            <div className="role-list">
+              {roles.map((role) => (
+                <label key={role.id} className="role-item">
+                  <input
+                    type="checkbox"
+                    checked={accessRoleIds.includes(role.id)}
+                    onChange={() => toggle(accessRoleIds, role.id, setAccessRoleIds)}
+                  />
+                  {role.name}
+                </label>
+              ))}
+            </div>
+          )}
           <p className="muted">Staff (libera fill, edita a scrim, vê o painel)</p>
-          <div className="role-list">
-            {roles.map((role) => (
-              <label key={`s-${role.id}`} className="role-item">
-                <input
-                  type="checkbox"
-                  checked={staffRoleIds.includes(role.id)}
-                  onChange={() => toggle(staffRoleIds, role.id, setStaffRoleIds)}
-                />
-                {role.name}
-              </label>
-            ))}
-          </div>
+          {rolesLoading || rolesError || roles.length === 0 ? (
+            <p className="muted">
+              {rolesLoading
+                ? "Carregando cargos do Discord…"
+                : rolesError ??
+                  "Nenhum cargo encontrado neste servidor. O bot precisa estar no servidor."}
+            </p>
+          ) : (
+            <div className="role-list">
+              {roles.map((role) => (
+                <label key={`s-${role.id}`} className="role-item">
+                  <input
+                    type="checkbox"
+                    checked={staffRoleIds.includes(role.id)}
+                    onChange={() => toggle(staffRoleIds, role.id, setStaffRoleIds)}
+                  />
+                  {role.name}
+                </label>
+              ))}
+            </div>
+          )}
           <p className="muted">Quando cada cargo pode fazer check-in (data e hora de Brasília)</p>
           {windows.map((window, index) => (
             <div className="window-row" key={`${window.roleId}-${index}`}>
@@ -559,7 +590,7 @@ function Home({
                   setWindows(next);
                 }}
               >
-                <option value="">Sem prioridade (todo mundo neste horário)</option>
+                <option value="">Sem prioridade</option>
                 {roles.map((role) => (
                   <option key={role.id} value={role.id}>
                     {role.name}

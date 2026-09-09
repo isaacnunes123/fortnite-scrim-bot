@@ -721,8 +721,14 @@ code {
 
 .window-row {
   display: grid;
-  grid-template-columns: 1fr minmax(210px, 1.2fr);
+  grid-template-columns: minmax(200px, 1.4fr) minmax(210px, 1fr);
   gap: 8px;
+}
+
+.window-row select,
+.window-row input {
+  min-width: 0;
+  margin-bottom: 8px;
 }
 
 .map-editor {

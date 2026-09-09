@@ -45,6 +45,7 @@ import {
   isStaffSession,
   requireAuth,
 } from "./staffAuth.js";
+import { DiscordRestError, fetchGuildRoles } from "./discordRest.js";
 import { readFreshBotHeartbeat } from "../bot/heartbeat.js";
 
 export type BotPresence = "online" | "offline" | "unknown";
@@ -426,6 +427,17 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
 
   app.get("/api/bot/status", requireAuth, async (_req, res) => {
     res.json(await resolveBotStatus(options.botStatus?.()));
+  });
+
+  app.get("/api/discord/roles", requireAuth, async (_req, res) => {
+    try {
+      res.json({ roles: await fetchGuildRoles() });
+    } catch (error) {
+      const status = error instanceof DiscordRestError ? error.status : 502;
+      const message =
+        error instanceof Error ? error.message : "Não foi possível listar os cargos do Discord";
+      res.status(status >= 400 && status < 600 ? status : 502).json({ error: message, roles: [] });
+    }
   });
 
   app.get("/api/logs", requireAuth, (req, res) => {

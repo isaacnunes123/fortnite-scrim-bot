@@ -9,6 +9,22 @@ export type DiscordMemberInfo = {
   guildName: string;
 };
 
+export type DiscordRoleInfo = {
+  id: string;
+  name: string;
+  color: string;
+};
+
+export class DiscordRestError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "DiscordRestError";
+    this.status = status;
+  }
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -62,4 +78,79 @@ export async function fetchGuildMember(userId: string): Promise<DiscordMemberInf
     displayName: nick || globalName || username || userId,
     guildName: await fetchGuildName(),
   };
+}
+
+function roleHexColor(color: unknown): string {
+  const n = typeof color === "number" ? color : Number(color);
+  if (!Number.isFinite(n) || n <= 0) {
+    return "#000000";
+  }
+  return `#${Math.trunc(n).toString(16).padStart(6, "0")}`;
+}
+
+function discordErrorMessage(body: unknown, fallback: string): string {
+  const record = asRecord(body);
+  const message = typeof record?.message === "string" ? record.message.trim() : "";
+  return message || fallback;
+}
+
+/** GET /guilds/{id}/roles — bot token only. Does not need Server Members Intent. */
+export async function fetchGuildRoles(): Promise<DiscordRoleInfo[]> {
+  if (!env.discordToken) {
+    throw new DiscordRestError(
+      "DISCORD_TOKEN não está na Vercel. O painel lista os cargos com o token do bot (API REST), sem precisar do gateway.",
+      503,
+    );
+  }
+  if (!env.discordGuildId) {
+    throw new DiscordRestError("DISCORD_GUILD_ID não está configurado.", 503);
+  }
+
+  const result = await discordGet(`/guilds/${env.discordGuildId}/roles`);
+  if (!result.ok) {
+    const detail = discordErrorMessage(result.body, "");
+    if (result.status === 401) {
+      throw new DiscordRestError(
+        "DISCORD_TOKEN rejeitado pelo Discord. Confira o token do bot na Vercel.",
+        401,
+      );
+    }
+    if (result.status === 403 || result.status === 404) {
+      throw new DiscordRestError(
+        `O bot não consegue ler os cargos do servidor ${env.discordGuildId}. Convide o bot para esse servidor. Não precisa ligar Server Members Intent.${detail ? ` ${detail}` : ""}`,
+        result.status,
+      );
+    }
+    throw new DiscordRestError(
+      detail || `Discord REST falhou ao listar cargos (${result.status || "sem resposta"}).`,
+      result.status >= 400 ? result.status : 502,
+    );
+  }
+  if (!Array.isArray(result.body)) {
+    throw new DiscordRestError("Resposta inesperada do Discord ao listar cargos.", 502);
+  }
+
+  return result.body
+    .map((item) => {
+      const record = asRecord(item);
+      if (!record) {
+        return null;
+      }
+      const id = String(record.id ?? "").trim();
+      const name = String(record.name ?? "").trim();
+      if (!/^\d{17,20}$/.test(id) || !name) {
+        return null;
+      }
+      return {
+        id,
+        name,
+        color: roleHexColor(record.color),
+        position: Number(record.position) || 0,
+        managed: Boolean(record.managed),
+      };
+    })
+    .filter((role): role is NonNullable<typeof role> => Boolean(role))
+    .filter((role) => role.id !== env.discordGuildId && !role.managed)
+    .sort((a, b) => b.position - a.position)
+    .map(({ id, name, color }) => ({ id, name, color }));
 }

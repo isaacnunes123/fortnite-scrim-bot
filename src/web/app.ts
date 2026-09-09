@@ -113,29 +113,6 @@ export async function createWebApp(options: { serveUi?: boolean } = {}) {
     res.json({ guilds: listBotGuilds(client) });
   });
 
-  app.get("/api/discord/roles", async (req, res) => {
-    if (!(await isStaffSession(req))) {
-      res.status(401).json({ error: "Não autenticado" });
-      return;
-    }
-    const client = getDiscordClient();
-    if (!client?.isReady()) {
-      res.status(503).json({ error: "Bot Discord offline" });
-      return;
-    }
-    const guild = getGuild(client);
-    if (!guild) {
-      res.json({ roles: [] });
-      return;
-    }
-    await guild.roles.fetch().catch(() => undefined);
-    const roles = [...guild.roles.cache.values()]
-      .filter((role) => role.id !== guild.id && !role.managed)
-      .sort((a, b) => b.position - a.position)
-      .map((role) => ({ id: role.id, name: role.name, color: role.hexColor }));
-    res.json({ roles });
-  });
-
   app.get("/api/scrims/:id", async (req, res) => {
     if (!(await isStaffSession(req))) {
       res.status(401).json({ error: "Não autenticado" });
