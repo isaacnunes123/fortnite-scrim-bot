@@ -64,6 +64,16 @@ export function fail(res: Response, error: unknown, fallback: string): void {
   res.status(400).json({ error: message });
 }
 
+async function commitJson(res: Response, status: number, body: unknown): Promise<void> {
+  try {
+    await flushStore();
+  } catch (error) {
+    fail(res, error, "Não foi possível gravar no banco");
+    return;
+  }
+  res.status(status).json(body);
+}
+
 export function withLiveMap<T extends { mapImageUrl: string }>(item: T): T {
   return { ...item, mapImageUrl: resolvePublicMapUrl(item.mapImageUrl).url };
 }
@@ -154,6 +164,17 @@ export function setupExpress(app: Express): void {
   });
   app.use(express.json({ limit: "8mb" }));
   app.use((req, _res, next) => {
+    const incoming = req as Request & { body?: unknown };
+    if (typeof incoming.body === "string" && incoming.body.trim().startsWith("{")) {
+      try {
+        incoming.body = JSON.parse(incoming.body) as Record<string, unknown>;
+      } catch {
+        // keep the raw string; routes will fail with a 400
+      }
+    }
+    next();
+  });
+  app.use((req, _res, next) => {
     const incoming = req as Request & { cookies?: unknown; secret?: string };
     Reflect.deleteProperty(incoming, "cookies");
     incoming.secret = env.sessionSecret;
@@ -193,6 +214,7 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
       host: process.env.VERCEL ? "vercel" : "node",
       persistence,
       warning,
+      yuniteConfigured: yuniteConfigured(),
       publicBaseUrl: publicBaseUrl(),
       discordRedirectUri: discordRedirectUri(),
     });
@@ -437,7 +459,7 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
     res.json({ tables: listTables() });
   });
 
-  app.post("/api/tables", requireAuth, (req, res) => {
+  app.post("/api/tables", requireAuth, async (req, res) => {
     try {
       const payload = tablePayload(req.body as Record<string, unknown>);
       const name = String(payload.name ?? "").trim();
@@ -445,8 +467,14 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
         res.status(400).json({ error: "Informe o nome da tabela" });
         return;
       }
+      if (payload.kind === "yunite" && !payload.yuniteTournamentId) {
+        res.status(400).json({
+          error: "Cole o ID ou o link do torneio Yunite, ou escolha um na lista.",
+        });
+        return;
+      }
       const table = createTable({ ...payload, name });
-      res.status(201).json({ table });
+      await commitJson(res, 201, { table });
     } catch (error) {
       fail(res, error, "Não foi possível criar a tabela");
     }
@@ -461,35 +489,57 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
     res.json({ table });
   });
 
-  app.put("/api/tables/:id", requireAuth, (req, res) => {
+  app.put("/api/tables/:id", requireAuth, async (req, res) => {
     try {
       const payload = tablePayload(req.body as Record<string, unknown>);
+      if (payload.kind === "yunite" && !payload.yuniteTournamentId) {
+        res.status(400).json({
+          error: "Cole o ID ou o link do torneio Yunite, ou escolha um na lista.",
+        });
+        return;
+      }
       const table = patchTable(String(req.params.id), payload as Partial<PublicTable>);
-      res.json({ table });
+      await commitJson(res, 200, { table });
     } catch (error) {
       fail(res, error, "Não foi possível salvar a tabela");
     }
   });
 
-  app.delete("/api/tables/:id", requireAuth, (req, res) => {
+  app.delete("/api/tables/:id", requireAuth, async (req, res) => {
     const table = deleteTable(String(req.params.id));
     if (!table) {
       res.status(404).json({ error: "Tabela não encontrada" });
       return;
     }
-    res.json({ ok: true });
+    await commitJson(res, 200, { ok: true });
   });
 
   app.get("/api/yunite/tournaments", requireAuth, async (_req, res) => {
     if (!yuniteConfigured()) {
-      res.json({ configured: false, tournaments: [] });
+      res.json({
+        configured: false,
+        tournaments: [],
+        error:
+          "A chave da API Yunite ainda não está na Vercel. Defina YUNITE_API_KEY nas variáveis do projeto para listar torneios e puxar a colocação.",
+      });
       return;
     }
     try {
       const tournaments = await listYuniteTournaments();
-      res.json({ configured: true, tournaments });
+      res.json({
+        configured: true,
+        tournaments,
+        error:
+          tournaments.length > 0
+            ? null
+            : "Nenhum torneio Yunite neste servidor. Cole o UUID ou o link yunite.xyz/leaderboard.",
+      });
     } catch (error) {
-      fail(res, error, "Não foi possível listar torneios Yunite");
+      res.json({
+        configured: true,
+        tournaments: [],
+        error: error instanceof Error ? error.message : "Não foi possível listar torneios Yunite",
+      });
     }
   });
 

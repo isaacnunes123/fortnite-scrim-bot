@@ -766,7 +766,11 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
     load().catch((err) => {
       setError(err instanceof Error ? err.message : "Falha ao carregar");
     });
-    api<{ configured: boolean; tournaments: Array<{ id: string; name: string }> }>("/api/yunite/tournaments")
+    api<{
+      configured: boolean;
+      tournaments: Array<{ id: string; name: string }>;
+      error?: string | null;
+    }>("/api/yunite/tournaments")
       .then((data) => {
         setYuniteConfigured(data.configured);
         setYuniteTournaments(data.tournaments ?? []);
@@ -921,8 +925,9 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
           <a href={`/tabelas/${id}`}>/tabelas/{id}</a>
         </p>
         {!yuniteConfigured ? (
-          <p className="muted">
-            Configure <code>YUNITE_API_KEY</code> na Vercel para o site puxar a colocação.
+          <p className="error">
+            A chave da API Yunite ainda não está na Vercel. Defina <code>YUNITE_API_KEY</code>{" "}
+            nas variáveis do projeto para o site puxar a colocação.
           </p>
         ) : null}
         {yuniteTournaments.length > 0 ? (

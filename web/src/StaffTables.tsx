@@ -86,6 +86,8 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
   const [yuniteTournaments, setYuniteTournaments] = useState<Array<{ id: string; name: string }>>(
     [],
   );
+  const [yuniteConfigured, setYuniteConfigured] = useState(true);
+  const [yuniteStatus, setYuniteStatus] = useState<string | null>(null);
   const [rows, setRows] = useState<DraftRow[]>([newRow(1)]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -130,9 +132,21 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
     load().catch((err) => {
       setError(err instanceof Error ? err.message : "Falha ao carregar tabelas");
     });
-    api<{ tournaments: Array<{ id: string; name: string }> }>("/api/yunite/tournaments")
-      .then((data) => setYuniteTournaments(data.tournaments ?? []))
-      .catch(() => setYuniteTournaments([]));
+    api<{
+      configured?: boolean;
+      tournaments: Array<{ id: string; name: string }>;
+      error?: string | null;
+    }>("/api/yunite/tournaments")
+      .then((data) => {
+        setYuniteConfigured(data.configured !== false);
+        setYuniteTournaments(data.tournaments ?? []);
+        setYuniteStatus(data.error ?? null);
+      })
+      .catch((err) => {
+        setYuniteConfigured(false);
+        setYuniteTournaments([]);
+        setYuniteStatus(err instanceof Error ? err.message : "Não foi possível listar torneios Yunite");
+      });
   }, []);
 
   async function onSave(event: FormEvent) {
@@ -151,6 +165,11 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
       yuniteTournamentId: yuniteId,
       rows: kind === "manual" ? payloadRows(rows) : [],
     };
+    if (kind === "yunite" && !yuniteId.trim()) {
+      setSaving(false);
+      setError("Cole o ID ou o link do torneio Yunite, ou escolha um na lista.");
+      return;
+    }
     try {
       const result = editingId
         ? await api<{ table: PublicTable }>(`/api/tables/${editingId}`, {
@@ -161,13 +180,15 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
             method: "POST",
             body: JSON.stringify(body),
           });
+      await load();
       fill(result.table);
       setNotice(
         editingId
           ? "Tabela salva. Já aparece em /tabelas."
-          : "Tabela criada. Já aparece em /tabelas.",
+          : result.table.kind === "manual"
+            ? "Tabela manual criada. Já aparece em /tabelas. Pode continuar editando as linhas."
+            : "Tabela Yunite criada. A colocação entra sozinha em /tabelas.",
       );
-      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível salvar a tabela");
     } finally {
@@ -203,10 +224,10 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
           </button>
           <h2 style={{ margin: "16px 0 4px" }}>Tabelas públicas</h2>
           <p className="muted">
-            Crie uma tabela Yunite ou uma <strong>tabela manual</strong>, sem UUID. Escolha a
-            divisão (2, 1 e Pro, Endgame ou Closed) para ela aparecer na aba certa em /tabelas.
-            Tabelas Closed ficam na aba Closed, com a identidade BUILD CLOSED. Opcional:
-            vincular uma scrim só para mostrar o mapa de drop.
+            Crie uma <strong>tabela manual</strong> (rank, players e pontos) ou puxe um torneio
+            Yunite. Escolha a divisão para ela aparecer na aba certa em /tabelas. Tabelas Closed
+            ficam em /closed, com a identidade BUILD CLOSED. Opcional: vincular uma scrim só
+            para o mapa de drop.
           </p>
         </div>
       </div>
@@ -219,6 +240,25 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
           <h3 style={{ marginTop: 0 }}>
             {editingId ? "Editar tabela" : "Adicionar tabela"}
           </h3>
+
+          <div className="kind-toggle" role="group" aria-label="Tipo da tabela">
+            <button
+              type="button"
+              className={`boards-chip ${kind === "manual" ? "on" : ""}`}
+              aria-pressed={kind === "manual"}
+              onClick={() => setKind("manual")}
+            >
+              Tabela manual
+            </button>
+            <button
+              type="button"
+              className={`boards-chip ${kind === "yunite" ? "on" : ""}`}
+              aria-pressed={kind === "yunite"}
+              onClick={() => setKind("yunite")}
+            >
+              Yunite
+            </button>
+          </div>
 
           <label htmlFor="table-name">Nome</label>
           <input
@@ -282,43 +322,37 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
             Ao vivo na listagem pública
           </label>
 
-          <div className="kind-toggle" role="group" aria-label="Tipo da tabela">
-            <button
-              type="button"
-              className={`boards-chip ${kind === "manual" ? "on" : ""}`}
-              onClick={() => setKind("manual")}
-            >
-              Tabela manual
-            </button>
-            <button
-              type="button"
-              className={`boards-chip ${kind === "yunite" ? "on" : ""}`}
-              onClick={() => setKind("yunite")}
-            >
-              Yunite
-            </button>
-          </div>
-
           {kind === "yunite" ? (
             <>
               <label htmlFor="table-yunite">ID ou link do torneio Yunite</label>
               <p className="muted">
-                Cole o UUID ou o link <code>yunite.xyz/leaderboard</code>. A colocação atualiza
-                sozinha no público.
+                Escolha na lista ou cole o UUID / o link <code>yunite.xyz/leaderboard</code>. A
+                colocação atualiza sozinha no público.
               </p>
-              {yuniteTournaments.length > 0 ? (
-                <select
-                  value={yuniteTournaments.some((item) => item.id === yuniteId) ? yuniteId : ""}
-                  onChange={(event) => setYuniteId(event.target.value)}
-                >
-                  <option value="">Selecionar torneio…</option>
-                  {yuniteTournaments.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
+              {!yuniteConfigured ? (
+                <p className="error">
+                  A chave da API Yunite ainda não está na Vercel. Defina{" "}
+                  <code>YUNITE_API_KEY</code> nas variáveis do projeto para listar torneios e
+                  puxar a colocação.
+                </p>
+              ) : yuniteStatus ? (
+                <p className={yuniteStatus.startsWith("Nenhum") ? "muted" : "error"}>{yuniteStatus}</p>
               ) : null}
+              <select
+                id="table-yunite-pick"
+                value={yuniteTournaments.some((item) => item.id === yuniteId) ? yuniteId : ""}
+                onChange={(event) => setYuniteId(event.target.value)}
+                disabled={!yuniteTournaments.length}
+              >
+                <option value="">
+                  {yuniteTournaments.length ? "Selecionar torneio…" : "Nenhum torneio na lista"}
+                </option>
+                {yuniteTournaments.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
               <input
                 id="table-yunite"
                 value={yuniteId}
@@ -427,9 +461,9 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
             </div>
           )}
 
-          <div className="actions" style={{ marginTop: 12 }}>
+          <div className="actions form-actions" style={{ marginTop: 12 }}>
             <button className="btn" type="submit" disabled={saving}>
-              {saving ? "Salvando…" : editingId ? "Salvar tabela" : "Adicionar tabela"}
+              {saving ? "Salvando…" : "Salvar tabela"}
             </button>
             {editingId ? (
               <>

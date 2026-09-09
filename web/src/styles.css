@@ -1488,7 +1488,8 @@ code {
 @media (max-width: 900px) {
   .preset-layout,
   .split,
-  .player-layout {
+  .player-layout,
+  .staff-tables .split {
     grid-template-columns: 1fr;
   }
 
@@ -2227,6 +2228,32 @@ code {
   flex-wrap: wrap;
   gap: 8px;
   margin: 4px 0 16px;
+}
+
+.kind-toggle .boards-chip {
+  color: var(--text);
+  background: var(--bg-panel);
+}
+
+.kind-toggle .boards-chip.on {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.staff-tables .split {
+  grid-template-columns: minmax(0, 1.5fr) minmax(240px, 340px);
+  align-items: start;
+}
+
+.staff-tables .form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-top: 16px;
+  padding-top: 12px;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--line);
 }
 
 .check-line {

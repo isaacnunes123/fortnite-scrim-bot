@@ -73,8 +73,16 @@ export type YuniteBoardPayload = {
   sessionId: string | null;
 };
 
+function yuniteApiKey(): string {
+  return process.env.YUNITE_API_KEY?.trim() || env.yuniteApiKey;
+}
+
+function yuniteGuildId(): string {
+  return process.env.DISCORD_GUILD_ID?.trim() || env.discordGuildId;
+}
+
 export function yuniteConfigured(): boolean {
-  return Boolean(env.yuniteApiKey);
+  return Boolean(yuniteApiKey());
 }
 
 export function parseYuniteTournamentId(raw: string): string {
@@ -96,12 +104,15 @@ export function parseYuniteTournamentId(raw: string): string {
   throw new Error("ID de torneio Yunite inválido. Cole o UUID ou o link da tabela.");
 }
 
-function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+function cached<T>(key: string, load: () => Promise<T>, skipEmpty = false): Promise<T> {
   const hit = cache.get(key) as CacheEntry<T> | undefined;
   if (hit && Date.now() - hit.at < CACHE_MS) {
     return Promise.resolve(hit.value);
   }
   return load().then((value) => {
+    if (skipEmpty && Array.isArray(value) && value.length === 0) {
+      return value;
+    }
     cache.set(key, { at: Date.now(), value });
     return value;
   });
@@ -143,9 +154,21 @@ function asArray(value: unknown): unknown[] {
     }
   }
   if (record.data) {
-    return asArray(record.data);
+    const nested = asArray(record.data);
+    if (nested.length) {
+      return nested;
+    }
   }
-  return [];
+  const keyed = Object.entries(record)
+    .filter(([key]) => looksLikeTournamentId(key))
+    .map(([key, item]) => {
+      const nested = asRecord(item);
+      return nested ? { ...nested, id: text(nested.id) || key } : item;
+    });
+  if (keyed.length) {
+    return keyed;
+  }
+  return valuesOf(record);
 }
 
 function num(value: unknown, fallback = 0): number {
@@ -587,19 +610,72 @@ function normalizeMatch(entry: unknown, index: number): YuniteMatch {
   return { id, name };
 }
 
-function normalizeTournament(entry: unknown): YuniteTournamentSummary | null {
+function looksLikeTournamentId(value: string): boolean {
+  return TOURNAMENT_ID.test(value);
+}
+
+function normalizeTournament(entry: unknown, fallbackId = ""): YuniteTournamentSummary | null {
+  if (typeof entry === "string") {
+    const id = entry.trim();
+    if (looksLikeTournamentId(id) || /^[A-Za-z0-9._-]{6,80}$/.test(id)) {
+      return { id, name: id };
+    }
+    return null;
+  }
   const record = asRecord(entry);
   if (!record) {
     return null;
   }
-  const id = text(record.id) || text(record.tournamentId) || text(record.uuid);
+  const id =
+    text(record.id) ||
+    text(record.tournamentId) ||
+    text(record.tournament_id) ||
+    text(record.uuid) ||
+    (looksLikeTournamentId(fallbackId) ? fallbackId : "");
   if (!id) {
     return null;
   }
   return {
     id,
-    name: text(record.name) || text(record.title) || id,
+    name:
+      text(record.name) ||
+      text(record.title) ||
+      text(record.tournamentName) ||
+      text(record.tournament_name) ||
+      text(record.label) ||
+      id,
   };
+}
+
+function tournamentsFromPayload(payload: unknown): YuniteTournamentSummary[] {
+  const byId = new Map<string, YuniteTournamentSummary>();
+  const add = (item: unknown, fallbackId = "") => {
+    const parsed = normalizeTournament(item, fallbackId);
+    if (parsed) {
+      byId.set(parsed.id, parsed);
+    }
+  };
+  if (Array.isArray(payload)) {
+    payload.forEach((item) => add(item));
+    return [...byId.values()];
+  }
+  const record = asRecord(payload);
+  if (!record) {
+    return [];
+  }
+  for (const key of LIST_KEYS) {
+    valuesOf(record[key]).forEach((item) => add(item));
+  }
+  if (record.data != null) {
+    asArray(record.data).forEach((item) => add(item));
+  }
+  for (const [key, value] of Object.entries(record)) {
+    if (key === "data" || LIST_KEYS.includes(key as (typeof LIST_KEYS)[number])) {
+      continue;
+    }
+    add(value, key);
+  }
+  return [...byId.values()];
 }
 
 function rowHasStats(row: YuniteLeaderboardRow): boolean {
@@ -678,14 +754,16 @@ function aggregateMatchRows(
 }
 
 async function yuniteGet(path: string): Promise<unknown> {
-  if (!env.yuniteApiKey) {
-    throw new Error("YUNITE_API_KEY ainda não está configurada no servidor.");
+  const token = yuniteApiKey();
+  if (!token) {
+    throw new Error(
+      "A chave da API Yunite ainda não está na Vercel. Defina YUNITE_API_KEY nas variáveis do projeto.",
+    );
   }
   const response = await fetch(`${YUNITE_BASE}${path}`, {
     headers: {
       Accept: "application/json",
-      "Content-Type": "application/json",
-      "Y-Api-Token": env.yuniteApiKey,
+      "Y-Api-Token": token,
     },
     signal: AbortSignal.timeout(12_000),
   });
@@ -696,27 +774,37 @@ async function yuniteGet(path: string): Promise<unknown> {
       text(record?.error) ||
       text(record?.message) ||
       text(record?.detail) ||
-      `Yunite respondeu ${response.status}`;
+      (response.status === 401 || response.status === 403
+        ? "A API Yunite recusou a chave. Confira YUNITE_API_KEY na Vercel."
+        : `Yunite respondeu ${response.status}`);
     throw new Error(message);
   }
   return payload;
 }
 
 export async function listYuniteTournaments(): Promise<YuniteTournamentSummary[]> {
-  const guildId = env.discordGuildId;
-  return cached(`tournaments:${guildId}`, async () => {
-    const payload = await yuniteGet(`/guild/${guildId}/tournaments`);
-    return asArray(payload)
-      .map(normalizeTournament)
-      .filter((item): item is YuniteTournamentSummary => Boolean(item));
-  });
+  const guildId = yuniteGuildId();
+  if (!guildId) {
+    throw new Error("DISCORD_GUILD_ID ainda não está configurado na Vercel.");
+  }
+  return cached(
+    `tournaments:${guildId}`,
+    async () => {
+      const payload = await yuniteGet(`/guild/${guildId}/tournaments`);
+      return tournamentsFromPayload(payload);
+    },
+    true,
+  );
 }
 
 export async function fetchYuniteBoard(
   tournamentId: string,
   sessionId?: string,
 ): Promise<YuniteBoardPayload> {
-  const guildId = env.discordGuildId;
+  const guildId = yuniteGuildId();
+  if (!guildId) {
+    throw new Error("DISCORD_GUILD_ID ainda não está configurado na Vercel.");
+  }
   const id = parseYuniteTournamentId(tournamentId);
   if (!id) {
     throw new Error("Informe o ID do torneio Yunite.");
