@@ -15,6 +15,7 @@ import {
   createTemplate,
   deleteTable,
   deleteTemplate,
+  deleteScrim,
   deleteScrimPreset,
   getScrim,
   getTable,
@@ -46,6 +47,7 @@ import {
   explainDiscordError,
   fetchDiscordGuildContext,
   provisionLobbyViaRest,
+  teardownLobbyViaRest,
 } from "../scrims/provisionRest.js";
 import { getPublicBoard, listPublicBoards, saveYuniteTournamentId } from "./publicTables.js";
 import { listYuniteTournaments, yuniteConfigured } from "../yunite/client.js";
@@ -279,9 +281,12 @@ async function resolveBotStatus(local?: BotStatusPayload): Promise<BotStatusPayl
 const RAILWAY_DOWN_ERROR =
   "O processo do bot no Railway não está no ar. Check-in ao vivo e slash commands precisam do gateway. Criar a categoria no Discord usa a API REST na Vercel (DISCORD_TOKEN + Gerenciar Canais/Cargos).";
 
-function isCreateScrimPath(req: Request): boolean {
+function isVercelDiscordRestPath(req: Request): boolean {
   const path = String(req.path || req.url || "").split("?")[0] ?? "";
-  return req.method === "POST" && /^\/api\/scrims\/?$/.test(path);
+  if (req.method === "POST" && /^\/api\/scrims\/?$/.test(path)) {
+    return true;
+  }
+  return req.method === "DELETE" && /^\/api\/scrims\/[^/]+\/?$/.test(path);
 }
 
 function isRailwayDownPayload(status: number, body: string): boolean {
@@ -396,7 +401,7 @@ function scrimCreatePayload(scrim: import("../scrims/store.js").Scrim) {
 }
 
 async function proxyToBotProcess(req: Request, res: Response): Promise<boolean> {
-  if (!env.botProcessUrl || isCreateScrimPath(req)) {
+  if (!env.botProcessUrl || isVercelDiscordRestPath(req)) {
     return false;
   }
   try {
@@ -859,6 +864,33 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
     }
   });
 
+  app.delete("/api/scrims/:id", async (req, res) => {
+    if (!(await canManageScrims(req))) {
+      res.status(401).json({ error: "Não autenticado" });
+      return;
+    }
+    await pullRemoteStore();
+    const id = String(req.params.id);
+    const scrim = getScrim(id);
+    if (!scrim) {
+      res.status(404).json({ error: "Scrim não encontrada" });
+      return;
+    }
+    try {
+      await teardownLobbyViaRest(scrim);
+      const removed = deleteScrim(id);
+      if (!removed) {
+        res.status(404).json({ error: "Scrim não encontrada" });
+        return;
+      }
+      await commitJson(res, 200, { ok: true });
+    } catch (error) {
+      res.status(provisionHttpStatus(error)).json({
+        error: explainDiscordError(error, "Não foi possível apagar a scrim no Discord"),
+      });
+    }
+  });
+
   app.get("/api/blacklist", requireAuth, (_req, res) => {
     res.json({ blacklist: listBlacklist() });
   });
@@ -1011,8 +1043,8 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
 }
 
 export async function botUnavailable(req: Request, res: Response): Promise<void> {
-  if (isCreateScrimPath(req)) {
-    res.status(404).json({ error: "Rota de criação não encontrada" });
+  if (isVercelDiscordRestPath(req)) {
+    res.status(404).json({ error: "Rota não encontrada" });
     return;
   }
   if (await proxyToBotProcess(req, res)) {

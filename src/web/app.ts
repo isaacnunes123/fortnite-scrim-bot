@@ -23,7 +23,6 @@ import {
 import {
   addInvite,
   addLog,
-  deleteScrim,
   ensureScrimHasDrops,
   findDropAt,
   flushStore,
@@ -45,7 +44,6 @@ import {
   setDropMarkingOpen,
   setFillChatOpen,
   syncLobbyAccess,
-  teardownLobby,
 } from "../scrims/lobby.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -390,23 +388,6 @@ export async function createWebApp(options: { serveUi?: boolean; app?: express.E
       }
     },
   );
-
-  app.delete("/api/scrims/:id", async (req, res) => {
-    if (!(await isStaffSession(req))) {
-      res.status(401).json({ error: "Não autenticado" });
-      return;
-    }
-    const client = getDiscordClient();
-    const removed = deleteScrim(String(req.params.id));
-    if (!removed) {
-      res.status(404).json({ error: "Scrim não encontrada" });
-      return;
-    }
-    if (client?.isReady()) {
-      await teardownLobby(client, removed);
-    }
-    res.json({ ok: true });
-  });
 
   app.post("/api/scrims/:id/invites", async (req, res) => {
     if (!(await isStaffSession(req))) {

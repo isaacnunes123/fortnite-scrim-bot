@@ -943,8 +943,16 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
     if (!window.confirm("Apagar esta scrim e todos os convites?")) {
       return;
     }
-    await api(`/api/scrims/${id}`, { method: "DELETE" });
-    onBack();
+    setError(null);
+    setSaving(true);
+    try {
+      await api(`/api/scrims/${id}`, { method: "DELETE" });
+      onBack();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível apagar a scrim");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (!scrim) {
@@ -973,7 +981,7 @@ function ScrimPage({ id, onBack }: { id: string; onBack: () => void }) {
         </div>
         <div className="actions">
           <span className="pill live">Ao vivo</span>
-          <button className="btn danger" type="button" onClick={onDelete}>
+          <button className="btn danger" type="button" disabled={saving} onClick={() => void onDelete()}>
             Apagar scrim
           </button>
         </div>

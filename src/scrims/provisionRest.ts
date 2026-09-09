@@ -59,13 +59,19 @@ export class DiscordProvisionError extends Error {
 const MISSING_PERMS =
   "O bot não tem permissão para criar canais ou cargos. No servidor: Configurações → Cargos → cargo do bot → marque Gerenciar Canais e Gerenciar Cargos. O cargo do bot precisa ficar acima dos cargos da divisão.";
 
-export function explainDiscordError(error: unknown): string {
+const MISSING_PERMS_DELETE =
+  "O bot não tem permissão para apagar canais ou cargos. No servidor: Configurações → Cargos → cargo do bot → marque Gerenciar Canais e Gerenciar Cargos. O cargo do bot precisa ficar acima dos cargos da divisão.";
+
+export function explainDiscordError(
+  error: unknown,
+  fallback = "Não foi possível criar a categoria no Discord",
+): string {
   if (error instanceof DiscordProvisionError || error instanceof DiscordRestError) {
     return error.message;
   }
   const text = error instanceof Error ? error.message : String(error ?? "");
   if (/missing permissions|50013/i.test(text)) {
-    return MISSING_PERMS;
+    return fallback.includes("apagar") ? MISSING_PERMS_DELETE : MISSING_PERMS;
   }
   if (/30013/.test(text)) {
     return "O servidor chegou no limite de canais do Discord. Apague categorias antigas de lobby e tente de novo.";
@@ -73,7 +79,7 @@ export function explainDiscordError(error: unknown): string {
   if (/30005/.test(text)) {
     return "O servidor chegou no limite de cargos do Discord. Apague cargos antigos de lobby (lobby-N-in / lobby-N-ready) e tente de novo.";
   }
-  return text || "Não foi possível criar a categoria no Discord";
+  return text || fallback;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -121,7 +127,11 @@ function requireSnowflake(value: unknown, label: string): string {
   return id;
 }
 
-function throwDiscord(result: { ok: boolean; status: number; body: unknown }, fallback: string): void {
+function throwDiscord(
+  result: { ok: boolean; status: number; body: unknown },
+  fallback: string,
+  missingPerms = MISSING_PERMS,
+): void {
   if (result.ok) {
     return;
   }
@@ -133,7 +143,7 @@ function throwDiscord(result: { ok: boolean; status: number; body: unknown }, fa
     );
   }
   if (result.status === 403 || code === 50013 || code === 50001) {
-    throw new DiscordRestError(MISSING_PERMS, 403);
+    throw new DiscordRestError(missingPerms, 403);
   }
   if (code === 30013) {
     throw new DiscordProvisionError(
@@ -157,10 +167,16 @@ export type DiscordGuildContext = {
   guildName: string;
 };
 
-export async function fetchDiscordGuildContext(): Promise<DiscordGuildContext> {
+export type GuildContextPurpose = "create" | "delete";
+
+export async function fetchDiscordGuildContext(
+  purpose: GuildContextPurpose = "create",
+): Promise<DiscordGuildContext> {
   if (!env.discordToken) {
     throw new DiscordRestError(
-      "DISCORD_TOKEN não está na Vercel. A criação da categoria usa a API REST do Discord (Gerenciar Canais / Gerenciar Cargos), sem precisar do Railway.",
+      purpose === "delete"
+        ? "DISCORD_TOKEN não está na Vercel. Apagar a scrim usa a API REST do Discord (Gerenciar Canais / Gerenciar Cargos), sem precisar do Railway."
+        : "DISCORD_TOKEN não está na Vercel. A criação da categoria usa a API REST do Discord (Gerenciar Canais / Gerenciar Cargos), sem precisar do Railway.",
       503,
     );
   }
@@ -207,7 +223,9 @@ export async function fetchDiscordGuildContext(): Promise<DiscordGuildContext> {
     }
     if (missing.length > 0) {
       throw new DiscordRestError(
-        `O bot precisa das permissões ${missing.join(" e ")} neste servidor para criar a categoria (check-in, mapa, código, chat, saída, fill e admin). Abra Configurações do servidor → Cargos → cargo do bot e marque essas permissões. O cargo do bot deve ficar acima dos cargos da divisão.`,
+        purpose === "delete"
+          ? `O bot precisa das permissões ${missing.join(" e ")} neste servidor para apagar a categoria, os canais e os cargos extras da lobby. Abra Configurações do servidor → Cargos → cargo do bot e marque Gerenciar Canais. O cargo do bot deve ficar acima dos cargos da divisão.`
+          : `O bot precisa das permissões ${missing.join(" e ")} neste servidor para criar a categoria (check-in, mapa, código, chat, saída, fill e admin). Abra Configurações do servidor → Cargos → cargo do bot e marque essas permissões. O cargo do bot deve ficar acima dos cargos da divisão.`,
         403,
       );
     }
@@ -256,6 +274,91 @@ async function teardownRest(guildId: string, created: CreatedIds): Promise<void>
   }
   for (const id of created.roles) {
     await discordRequest("DELETE", `/guilds/${guildId}/roles/${id}`).catch(() => undefined);
+  }
+}
+
+function snowflakeIds(values: Array<string | null | undefined>): string[] {
+  return values.filter((id): id is string => Boolean(id && /^\d{17,20}$/.test(id)));
+}
+
+async function collectCategoryChannelIds(guildId: string, categoryId: string): Promise<string[]> {
+  if (!/^\d{17,20}$/.test(categoryId)) {
+    return [];
+  }
+  const result = await discordRequest("GET", `/guilds/${guildId}/channels`);
+  if (!result.ok) {
+    if (result.status === 404) {
+      return [];
+    }
+    throwDiscord(
+      result,
+      "Não foi possível listar os canais da categoria no Discord",
+      MISSING_PERMS_DELETE,
+    );
+  }
+  if (!Array.isArray(result.body)) {
+    return [];
+  }
+  const ids: string[] = [];
+  for (const item of result.body) {
+    const record = asRecord(item);
+    const id = String(record?.id ?? "");
+    const parent = String(record?.parent_id ?? "");
+    if (parent === categoryId && /^\d{17,20}$/.test(id)) {
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
+async function deleteDiscordResource(path: string, fallback: string): Promise<void> {
+  const result = await discordRequest("DELETE", path);
+  if (result.ok || result.status === 404) {
+    return;
+  }
+  throwDiscord(result, fallback, MISSING_PERMS_DELETE);
+}
+
+export async function teardownLobbyViaRest(scrim: Scrim): Promise<void> {
+  if (!scrim.discord) {
+    return;
+  }
+  const ctx = await fetchDiscordGuildContext("delete");
+  const guildId = /^\d{17,20}$/.test(scrim.guildId) ? scrim.guildId : ctx.guildId;
+  const categoryId = scrim.discord.categoryId;
+  const channelIds = new Set(
+    snowflakeIds([
+      scrim.discord.registrationId,
+      scrim.discord.dropmapId,
+      scrim.discord.codeId,
+      scrim.discord.chatId,
+      scrim.discord.leaveId,
+      scrim.discord.fillId,
+      scrim.discord.adminId,
+      categoryId,
+    ]),
+  );
+  for (const id of await collectCategoryChannelIds(guildId, categoryId)) {
+    channelIds.add(id);
+  }
+
+  for (const id of [...channelIds].filter((id) => id !== categoryId)) {
+    await deleteDiscordResource(
+      `/channels/${id}`,
+      "Não foi possível apagar um canal da scrim no Discord",
+    );
+  }
+  if (/^\d{17,20}$/.test(categoryId)) {
+    await deleteDiscordResource(
+      `/channels/${categoryId}`,
+      "Não foi possível apagar a categoria da scrim no Discord",
+    );
+  }
+  for (const id of snowflakeIds([scrim.discord.registeredRoleId, scrim.discord.confirmedRoleId])) {
+    await deleteDiscordResource(
+      `/guilds/${guildId}/roles/${id}`,
+      "Não foi possível apagar um cargo extra da lobby no Discord",
+    );
   }
 }
 
