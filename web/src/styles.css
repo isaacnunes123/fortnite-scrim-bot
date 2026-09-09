@@ -1843,6 +1843,18 @@ code {
   }
 }
 
+.home-page.shell.boards-shell {
+  max-width: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.home-constrain {
+  width: min(1120px, calc(100% - 40px));
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .home-lead {
   max-width: 42rem;
   font-size: 17px;
@@ -1878,24 +1890,32 @@ code {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  border-radius: 18px;
-  min-height: clamp(320px, 46vw, 480px);
+  min-height: clamp(360px, 46vw, 540px);
   margin: 0 0 28px;
-  padding: 28px 28px 32px;
+  padding: 0;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow);
 }
 
 .scrims-hero-bg {
   position: absolute;
   inset: 0;
   z-index: -2;
-  background-position: center 42%;
-  background-size: cover;
+  background-position: 0% 48%;
+  background-size: 150% auto;
   background-repeat: no-repeat;
+}
+
+.scrims-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, var(--bg) 0%, transparent 18%),
+    linear-gradient(0deg, var(--bg) 0%, transparent 22%);
 }
 
 .scrims-hero::after {
@@ -1903,17 +1923,37 @@ code {
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(
-    180deg,
-    rgba(8, 6, 12, 0.1) 0%,
-    rgba(8, 6, 12, 0.28) 40%,
-    rgba(8, 6, 12, 0.9) 100%
-  );
+  background:
+    linear-gradient(
+      90deg,
+      rgba(8, 6, 12, 0.9) 0%,
+      rgba(8, 6, 12, 0.82) 34%,
+      rgba(8, 6, 12, 0.38) 54%,
+      rgba(8, 6, 12, 0.14) 72%,
+      rgba(8, 6, 12, 0.28) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(8, 6, 12, 0.18) 0%,
+      rgba(8, 6, 12, 0.08) 42%,
+      rgba(8, 6, 12, 0.94) 100%
+    );
+}
+
+.scrims-hero-inner {
+  position: relative;
+  z-index: 1;
+  padding: 56px 0 48px;
+}
+
+.scrims-hero-copy {
+  max-width: min(36rem, 52%);
 }
 
 .scrims-hero h1 {
   margin: 0 0 8px;
   font-size: clamp(36px, 6vw, 64px);
+  text-shadow: 0 6px 28px rgba(8, 6, 12, 0.55);
 }
 
 .closed-hero {
@@ -1921,7 +1961,6 @@ code {
   overflow: hidden;
 }
 
-.scrims-hero > :not(.scrims-hero-bg):not(.hero-watermark),
 .closed-hero > :not(.hero-watermark) {
   position: relative;
   z-index: 1;
@@ -1961,10 +2000,43 @@ code {
   font-weight: 600;
 }
 
+@media (max-width: 900px) {
+  .scrims-hero-copy {
+    max-width: min(34rem, 64%);
+  }
+
+  .scrims-hero-bg {
+    background-size: 190% auto;
+    background-position: 0% 46%;
+  }
+}
+
 @media (max-width: 720px) {
   .scrims-hero {
-    min-height: 280px;
-    padding: 20px 18px 24px;
+    min-height: 320px;
+  }
+
+  .scrims-hero-inner {
+    padding: 36px 0 32px;
+  }
+
+  .scrims-hero-copy {
+    max-width: 100%;
+  }
+
+  .scrims-hero-bg {
+    background-size: 240% auto;
+    background-position: 8% 42%;
+  }
+
+  .scrims-hero::after {
+    background:
+      linear-gradient(
+        180deg,
+        rgba(8, 6, 12, 0.35) 0%,
+        rgba(8, 6, 12, 0.55) 40%,
+        rgba(8, 6, 12, 0.94) 100%
+      );
   }
 }
 
