@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { getBotStatus, getDiscordClient } from "../bot/client.js";
 import { getGuild, listBotGuilds, notifyInvite, resolveDiscordPlayer, rosterForScrim } from "../bot/guild.js";
 import { subscribe } from "../scrims/live.js";
-import { env } from "../env.js";
+import { cookieOptions, clearCookieOptions, env } from "../env.js";
+import { discordRedirectUri, publicBaseUrl } from "../scrims/links.js";
 import { DEFAULT_MAP_URL, resolvePublicMapUrl, savePresetMap, saveUploadedMap, uploadDir } from "../scrims/maps.js";
 import {
   beginDiscordLogin,
@@ -154,7 +155,12 @@ export async function createWebApp() {
   app.use("/maps", express.static(path.join(process.cwd(), "dist", "public", "maps")));
 
   app.get("/api/health", (_req, res) => {
-    res.json({ ok: true, service: "fortnite-scrim-bot" });
+    res.json({
+      ok: true,
+      service: "fortnite-scrim-bot",
+      publicBaseUrl: publicBaseUrl(),
+      discordRedirectUri: discordRedirectUri(),
+    });
   });
 
   app.get("/api/stream", async (req, res) => {
@@ -201,18 +207,12 @@ export async function createWebApp() {
       res.status(401).json({ error: "Senha incorreta" });
       return;
     }
-    res.cookie(COOKIE_NAME, "admin", {
-      httpOnly: true,
-      signed: true,
-      sameSite: "lax",
-      secure: env.cookieSecure,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie(COOKIE_NAME, "admin", cookieOptions(7 * 24 * 60 * 60 * 1000));
     res.json({ ok: true });
   });
 
   app.post("/api/auth/logout", (_req, res) => {
-    res.clearCookie(COOKIE_NAME);
+    res.clearCookie(COOKIE_NAME, clearCookieOptions);
     res.json({ ok: true });
   });
 

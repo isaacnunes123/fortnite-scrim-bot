@@ -43,7 +43,24 @@ set NODE_ENV=production
 npm start
 ```
 
-A host precisa expor a porta (`PORT`, padrão `3000`) e ter as variáveis do `.env`. Com Docker:
+A host precisa expor a porta (`PORT`, padrão `3000`) e ter as variáveis do `.env`.
+
+## Domínio próprio (Railway)
+
+O frontend usa caminhos relativos (`/api/...`, `/painel`). Um único build serve o endereço Railway e o domínio comprado.
+
+1. No Railway do projeto **handsome-curiosity** → serviço → **Settings → Networking → Custom Domain**, ou no CLI: `railway domain seudominio.com`.
+2. No DNS do registrador, crie **os dois** records que o Railway mostrar (CNAME/ALIAS + TXT de verificação). Sem o TXT o domínio fica em 404.
+3. Variáveis no Railway (sem barra no final):
+   - `PUBLIC_BASE_URL=https://seudominio.com`
+   - opcional: `DISCORD_REDIRECT_URI=https://seudominio.com/api/auth/discord/callback`
+   - opcional: `PUBLIC_HOSTS=www.seudominio.com`
+4. Discord Developer Portal → OAuth2 → Redirects, adicione:
+   - `https://seudominio.com/api/auth/discord/callback`
+   - mantenha também `https://handsome-curiosity-production-48d3.up.railway.app/api/auth/discord/callback` se ainda for usar o link Railway
+5. Confira em `/api/health` se `publicBaseUrl` e `discordRedirectUri` batem com o domínio.
+
+Com Docker:
 
 ```bash
 docker build -t fortnite-scrim-bot .

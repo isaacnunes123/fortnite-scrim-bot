@@ -11,7 +11,7 @@ import {
   type TextChannel,
 } from "discord.js";
 import { getGuild } from "../bot/guild.js";
-import { dropMapUrl } from "./links.js";
+import { dropMapUrl, publicBaseUrl } from "./links.js";
 import {
   applyEmbedVars,
   claimDrop,
@@ -304,7 +304,7 @@ export async function provisionLobby(client: Client, scrim: Scrim): Promise<Scri
     ],
   });
   await admin.send(
-    `Staff: painel em ${process.env.PUBLIC_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`}`,
+    `Staff: painel em ${publicBaseUrl()}`,
   );
 
   schedulePriorityPings(client, withDrop);

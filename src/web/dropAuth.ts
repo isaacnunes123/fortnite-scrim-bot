@@ -2,8 +2,8 @@ import { createHmac, randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
 import { getDiscordClient } from "../bot/client.js";
 import { getGuild } from "../bot/guild.js";
-import { env } from "../env.js";
-import { publicBaseUrl } from "../scrims/links.js";
+import { cookieOptions, clearCookieOptions, env } from "../env.js";
+import { discordRedirectUri } from "../scrims/links.js";
 import { getScrim, listInvites, addInvite, type Scrim } from "../scrims/store.js";
 
 export const DROP_COOKIE = "drop_player";
@@ -18,8 +18,8 @@ export type MapAccess = {
   isStaff: boolean;
 };
 
-function redirectUri(): string {
-  return `${publicBaseUrl()}/api/auth/discord/callback`;
+function redirectUri(req: Request): string {
+  return discordRedirectUri(req);
 }
 
 function signState(value: string): string {
@@ -38,22 +38,16 @@ export function beginDiscordLogin(req: Request, res: Response): void {
       .status(503)
       .send(
         "Login Discord não configurado. No Developer Portal, copie o Client Secret e coloque DISCORD_CLIENT_SECRET. Redirect: " +
-          redirectUri(),
+          redirectUri(req),
       );
     return;
   }
   const nonce = randomUUID();
   const payload = `${nonce}|${kind}|${scrimId}`;
-  res.cookie(OAUTH_COOKIE, `${payload}.${signState(payload)}`, {
-    httpOnly: true,
-    signed: true,
-    sameSite: "lax",
-    secure: env.cookieSecure,
-    maxAge: 10 * 60 * 1000,
-  });
+  res.cookie(OAUTH_COOKIE, `${payload}.${signState(payload)}`, cookieOptions(10 * 60 * 1000));
   const url = new URL("https://discord.com/api/oauth2/authorize");
   url.searchParams.set("client_id", env.discordClientId);
-  url.searchParams.set("redirect_uri", redirectUri());
+  url.searchParams.set("redirect_uri", redirectUri(req));
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "identify");
   url.searchParams.set("state", nonce);
@@ -66,7 +60,7 @@ export async function finishDiscordLogin(req: Request, res: Response): Promise<v
   const raw = String(req.signedCookies?.[OAUTH_COOKIE] ?? "");
   const [payload, signature] = raw.split(".");
   const [nonce, kind, scrimId] = (payload ?? "").split("|");
-  res.clearCookie(OAUTH_COOKIE);
+  res.clearCookie(OAUTH_COOKIE, clearCookieOptions);
   if (!code || !payload || signature !== signState(payload) || nonce !== state) {
     res.status(400).send("Login Discord inválido. Tente de novo.");
     return;
@@ -80,7 +74,7 @@ export async function finishDiscordLogin(req: Request, res: Response): Promise<v
       client_secret: env.discordClientSecret,
       grant_type: "authorization_code",
       code,
-      redirect_uri: redirectUri(),
+      redirect_uri: redirectUri(req),
     }),
   });
   const tokenJson = (await tokenRes.json()) as { access_token?: string; error?: string };
@@ -108,13 +102,7 @@ export async function finishDiscordLogin(req: Request, res: Response): Promise<v
       );
       return;
     }
-    res.cookie("scrim_session", `discord:${me.id}`, {
-      httpOnly: true,
-      signed: true,
-      sameSite: "lax",
-      secure: env.cookieSecure,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie("scrim_session", `discord:${me.id}`, cookieOptions(7 * 24 * 60 * 60 * 1000));
     res.redirect("/painel");
     return;
   }
@@ -124,13 +112,7 @@ export async function finishDiscordLogin(req: Request, res: Response): Promise<v
     return;
   }
 
-  res.cookie(DROP_COOKIE, me.id, {
-    httpOnly: true,
-    signed: true,
-    sameSite: "lax",
-    secure: env.cookieSecure,
-    maxAge: 12 * 60 * 60 * 1000,
-  });
+  res.cookie(DROP_COOKIE, me.id, cookieOptions(12 * 60 * 60 * 1000));
   res.redirect(`/mapa/${scrimId}`);
 }
 
