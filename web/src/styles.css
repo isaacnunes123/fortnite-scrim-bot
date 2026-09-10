@@ -991,38 +991,49 @@ code {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.1em;
+  gap: 0.08em;
   min-width: 0;
   max-width: calc(100% / var(--marker-count, 1));
   height: 100%;
-  font-size: min(calc(var(--marker-scale, 1.4) / var(--slot-w, 4) * 100cqi), 48cqb);
+  font-size: min(calc(var(--marker-scale, 1.6) / var(--slot-w, 4) * 100cqi), 46cqb);
 }
 
 .drop-marker-face {
-  width: min(1em, 86%, 52cqb);
-  height: min(1em, 86%, 52cqb);
-  flex-shrink: 0;
+  width: min(1.08em, 78%, 44%);
+  height: min(1.08em, 78%, 44%);
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 0;
   border-radius: 50%;
   object-fit: cover;
   border: 0.07em solid var(--claim-role, #1a1418);
-  box-shadow: 0 0 0 0.045em #0a090b, 0 0.05em 0.14em rgba(0, 0, 0, 0.55);
+  box-shadow: 0 0 0 0.045em #000, 0 0.05em 0.14em rgba(0, 0, 0, 0.55);
   background: #111;
 }
 
 .drop-marker-name {
+  flex: 0 0 auto;
   color: #fff;
   font-family: "Barlow Condensed", Impact, sans-serif;
-  font-size: 0.32em;
+  font-size: clamp(11px, calc(26cqi / var(--marker-count, 1)), 0.66em);
   font-weight: 800;
-  line-height: 1;
+  line-height: 0.95;
   text-align: center;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.01em;
+  width: 100%;
   max-width: 100%;
+  padding: 0.12em 0.1em;
+  box-sizing: border-box;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  -webkit-text-stroke: 0.14em #0a090b;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
+  -webkit-text-stroke: 0.28em #000;
   paint-order: stroke fill;
 }
 

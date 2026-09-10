@@ -66,7 +66,7 @@ export function polygonBox(vertices: Vertex[]): {
 }
 
 function boxPad(size: number): number {
-  return Math.min(size * 0.2, Math.max(0.16, size * 0.12));
+  return Math.min(size * 0.16, Math.max(0.12, size * 0.09));
 }
 
 /** Retângulo interno do drop (bbox com padding) para foto/nick. */
@@ -102,9 +102,9 @@ export function claimAnchor(vertices: Vertex[], index: number, count: number): V
 export function markerScale(vertices: Vertex[], count = 1): number {
   const slot = claimSlot(vertices);
   const n = Math.max(1, count);
-  const fromW = (slot.width / n) * 0.46;
-  const fromH = slot.height * 0.5;
-  return Math.min(3.1, Math.max(1.02, Math.min(fromW, fromH)));
+  const fromW = (slot.width / n) * 0.58;
+  const fromH = slot.height * 0.52;
+  return Math.min(3.45, Math.max(1.18, Math.min(fromW, fromH)));
 }
 
 export function clickPercent(

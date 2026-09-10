@@ -28,7 +28,7 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-function shortNick(value: string, maxChars = 10): string {
+function shortNick(value: string, maxChars = 16): string {
   const nick = value.trim();
   if (nick.length <= maxChars) {
     return nick;
@@ -535,7 +535,7 @@ export function MapBoard({
                             <b className="drop-marker-name">
                               {shortNick(
                                 claim.displayName || claim.teamName || "Drop",
-                                scale < 1.5 ? 7 : 10,
+                                scale < 1.25 ? 14 : 18,
                               )}
                             </b>
                           </div>
