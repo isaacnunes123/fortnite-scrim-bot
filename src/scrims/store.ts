@@ -1348,6 +1348,7 @@ export function createScrim(input: {
     provisionStatus: "pending",
     provisionError: null,
     drops: cloneDrops(template.drops),
+    dropsUpdatedAt: "",
     templateId: template.id,
     templateName: template.name,
     dropsOpen: true,
