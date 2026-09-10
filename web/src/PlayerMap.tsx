@@ -26,7 +26,7 @@ export function PlayerMap() {
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState(false);
 
-  async function load(): Promise<"ok" | "login"> {
+  async function load(isPoll = false): Promise<"ok" | "login"> {
     const response = await fetch(`/api/public/scrims/${scrimId}/map`, {
       credentials: "include",
     });
@@ -55,8 +55,10 @@ export function PlayerMap() {
     setName(data.name ?? "");
     setTeamName(data.teamName ?? "");
     setFortniteNick(data.fortniteNick ?? data.teamName ?? "");
-    setMapImageUrl(data.mapImageUrl ?? "");
-    setDrops(data.drops ?? []);
+    if (data.mapImageUrl) {
+      setMapImageUrl((prev) => data.mapImageUrl || prev);
+    }
+    setDrops((prev) => stabilizeDrops(prev, data.drops ?? [], isPoll));
     setDropped(Boolean(data.dropped));
     setCanClaim(Boolean(data.canClaim));
     setDropsOpen(data.dropsOpen !== false);
@@ -86,14 +88,17 @@ export function PlayerMap() {
         return;
       }
       timer = window.setInterval(() => {
-        load()
+        if (document.hidden) {
+          return;
+        }
+        load(true)
           .then((result) => {
             if (result === "ok") {
               setError(null);
             }
           })
           .catch(() => undefined);
-      }, 2000);
+      }, 4000);
     })();
     return () => {
       cancelled = true;
@@ -122,7 +127,7 @@ export function PlayerMap() {
     setFlash(true);
     window.setTimeout(() => setFlash(false), 900);
     setDone(`${drop.name} marcado. No Discord já devem aparecer código e getting-off.`);
-    await load().catch(() => undefined);
+    await load(false).catch(() => undefined);
   }
 
   function onPick(drop: DropSpot) {
@@ -301,6 +306,23 @@ export function PlayerMap() {
       ) : null}
     </div>
   );
+}
+
+function claimTotal(drops: DropSpot[]): number {
+  return drops.reduce((n, drop) => n + listDropClaims(drop).length, 0);
+}
+
+function stabilizeDrops(prev: DropSpot[], next: DropSpot[], isPoll: boolean): DropSpot[] {
+  if (isPoll && prev.length > 0 && next.length === 0) {
+    return prev;
+  }
+  if (!next.length) {
+    return prev.length ? prev : next;
+  }
+  if (isPoll && prev.length === next.length && claimTotal(next) < claimTotal(prev)) {
+    return prev;
+  }
+  return next;
 }
 
 function isInfraError(message: string): boolean {

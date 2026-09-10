@@ -1094,7 +1094,7 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
   );
 
   app.get("/api/public/scrims/:id/map", async (req, res) => {
-    await pullRemoteStore();
+    await pullRemoteStore({ minIntervalMs: 1500 });
     const scrim = getScrim(String(req.params.id));
     if (!scrim) {
       res.status(404).json({ error: "Scrim não encontrada", login: false });

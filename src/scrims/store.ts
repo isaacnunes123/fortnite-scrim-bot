@@ -879,9 +879,15 @@ function parseRemoteStore(raw: unknown): StoreFile | null {
   return hydrateStore(parsed);
 }
 
+let lastRemotePullAt = 0;
+
 /** Pull Neon into memory without dropping in-flight local rows. */
-export async function pullRemoteStore(): Promise<void> {
+export async function pullRemoteStore(options?: { minIntervalMs?: number }): Promise<void> {
   if (!usesRemoteStore()) {
+    return;
+  }
+  const minInterval = options?.minIntervalMs ?? 0;
+  if (minInterval > 0 && Date.now() - lastRemotePullAt < minInterval) {
     return;
   }
   try {
@@ -891,6 +897,7 @@ export async function pullRemoteStore(): Promise<void> {
     }
     cache = cache ? overlayLocalOnRemote(remote, cache) : remote;
     remoteError = null;
+    lastRemotePullAt = Date.now();
   } catch (error) {
     remoteError = error instanceof Error ? error.message : "Falha ao ler o Postgres";
     console.error("[store] pullRemoteStore:", error);
