@@ -223,6 +223,7 @@ export type BlacklistEntry = {
 type StoreFile = {
   scrims: Scrim[];
   invites: Invite[];
+  removedInviteIds: string[];
   templates: MapTemplate[];
   scrimPresets: ScrimPreset[];
   blacklist: BlacklistEntry[];
@@ -303,12 +304,32 @@ function emptyStore(): StoreFile {
   return {
     scrims: [],
     invites: [],
+    removedInviteIds: [],
     templates: defaultTemplates(),
     scrimPresets: [],
     blacklist: [],
     logs: [],
     tables: [],
   };
+}
+
+function mergeRemovedInviteIds(local: string[] = [], remote: string[] = []): string[] {
+  return [...new Set([...remote, ...local].map((id) => String(id).trim()).filter(Boolean))].slice(
+    -4000,
+  );
+}
+
+function rememberRemovedInvites(ids: string[]): void {
+  const store = getStore();
+  store.removedInviteIds = mergeRemovedInviteIds(store.removedInviteIds, ids);
+}
+
+function withoutRemovedInvites(invites: Invite[], removed: string[]): Invite[] {
+  if (removed.length === 0) {
+    return invites;
+  }
+  const blocked = new Set(removed);
+  return invites.filter((invite) => !blocked.has(invite.id));
 }
 
 export function defaultEmbeds(): ScrimEmbeds {
@@ -673,15 +694,22 @@ function hydrateStore(parsed: Partial<StoreFile>): StoreFile {
     scrimPresetsPath(dataDir()),
     [],
   ).map(normalizeScrimPreset);
+  const removedInviteIds = mergeRemovedInviteIds(
+    Array.isArray(parsed.removedInviteIds) ? parsed.removedInviteIds : [],
+  );
   return {
     scrims: (parsed.scrims ?? []).map(normalizeScrim),
-    invites: (parsed.invites ?? []).map((invite) => ({
-      ...invite,
-      dropped: Boolean(invite.dropped),
-      fortniteNick: invite.fortniteNick ?? "",
-      droppedAt: invite.droppedAt ?? null,
-      dropName: invite.dropName ?? null,
-    })),
+    invites: withoutRemovedInvites(
+      (parsed.invites ?? []).map((invite) => ({
+        ...invite,
+        dropped: Boolean(invite.dropped),
+        fortniteNick: invite.fortniteNick ?? "",
+        droppedAt: invite.droppedAt ?? null,
+        dropName: invite.dropName ?? null,
+      })),
+      removedInviteIds,
+    ),
+    removedInviteIds,
     templates: templates.length > 0 ? templates : defaultTemplates(),
     scrimPresets: mergeLast([repoScrimPresets, dataScrimPresets, storeScrimPresets]),
     blacklist: parsed.blacklist ?? [],
@@ -846,19 +874,24 @@ function pickScrim(local: Scrim, remote: Scrim): Scrim {
 }
 
 function overlayLocalOnRemote(remote: StoreFile, local: StoreFile): StoreFile {
+  const removedInviteIds = mergeRemovedInviteIds(local.removedInviteIds, remote.removedInviteIds);
   return {
     scrims: mergeById(local.scrims, remote.scrims, pickScrim).map(normalizeScrim),
-    invites: mergeById(local.invites, remote.invites, (localInvite, remoteInvite) => {
-      if (remoteInvite.dropped && !localInvite.dropped) {
-        return remoteInvite;
-      }
-      if (localInvite.dropped && !remoteInvite.dropped) {
-        return localInvite;
-      }
-      const localAt = Date.parse(localInvite.droppedAt ?? "") || 0;
-      const remoteAt = Date.parse(remoteInvite.droppedAt ?? "") || 0;
-      return remoteAt > localAt ? remoteInvite : localInvite;
-    }),
+    invites: withoutRemovedInvites(
+      mergeById(local.invites, remote.invites, (localInvite, remoteInvite) => {
+        if (remoteInvite.dropped && !localInvite.dropped) {
+          return remoteInvite;
+        }
+        if (localInvite.dropped && !remoteInvite.dropped) {
+          return localInvite;
+        }
+        const localAt = Date.parse(localInvite.droppedAt ?? "") || 0;
+        const remoteAt = Date.parse(remoteInvite.droppedAt ?? "") || 0;
+        return remoteAt > localAt ? remoteInvite : localInvite;
+      }),
+      removedInviteIds,
+    ),
+    removedInviteIds,
     templates: mergeById(local.templates, remote.templates, (left, right) =>
       left.drops.length >= right.drops.length ? left : right,
     ),
@@ -933,6 +966,9 @@ function getStore(): StoreFile {
   }
   if (!Array.isArray(cache.tables)) {
     cache.tables = [];
+  }
+  if (!Array.isArray(cache.removedInviteIds)) {
+    cache.removedInviteIds = [];
   }
   return cache;
 }
@@ -1490,6 +1526,7 @@ export function clearPlayerDrop(scrimId: string, discordUserId: string, teamName
     });
     applyClaims(drop, claims);
   }
+  scrim.dropsUpdatedAt = new Date().toISOString();
 }
 
 export function removeInvite(scrimId: string, inviteId: string): boolean {
@@ -1500,6 +1537,7 @@ export function removeInvite(scrimId: string, inviteId: string): boolean {
   if (!invite) {
     return false;
   }
+  rememberRemovedInvites([invite.id]);
   clearPlayerDrop(scrimId, invite.discordUserId, invite.teamName);
   store.invites = store.invites.filter((item) => item.id !== invite.id);
   persist();
@@ -1514,6 +1552,7 @@ export function removePlayer(scrimId: string, discordUserId: string): Invite | n
   if (!invite) {
     return null;
   }
+  rememberRemovedInvites([invite.id]);
   clearPlayerDrop(scrimId, discordUserId, invite.teamName);
   store.invites = store.invites.filter((item) => item.id !== invite.id);
   setCheckinCooldown(discordUserId);
@@ -1831,6 +1870,10 @@ export function deleteScrim(id: string): Scrim | null {
   if (!scrim) {
     return null;
   }
+  const removedIds = store.invites
+    .filter((invite) => invite.scrimId === id)
+    .map((invite) => invite.id);
+  rememberRemovedInvites(removedIds);
   store.scrims = store.scrims.filter((item) => item.id !== id);
   store.invites = store.invites.filter((invite) => invite.scrimId !== id);
   store.tables = (store.tables ?? []).map((table) =>

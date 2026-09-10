@@ -8,7 +8,7 @@ import {
   scrimEmbedVars,
 } from "../scrims/lobbyPayloads.js";
 import { getScrim, patchScrim, type Scrim } from "../scrims/store.js";
-import { discordRequest, fetchBotUserId, fetchGuildMember } from "./discordRest.js";
+import { discordRequest, fetchBotUserId, fetchGuildMember, takeMemberRole } from "./discordRest.js";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -171,6 +171,19 @@ export async function setFillChatOpenViaRest(scrim: Scrim, open: boolean): Promi
   patchScrim(live.id, {
     discord: { ...live.discord, fillChatOpen: open },
   });
+}
+
+export async function removePlayerFromLobbyViaRest(scrim: Scrim, userId: string): Promise<void> {
+  const live = getScrim(scrim.id) ?? scrim;
+  if (live.discord) {
+    const guildId = live.guildId || env.discordGuildId;
+    await takeMemberRole(guildId, userId, live.discord.registeredRoleId).catch(() => undefined);
+    await takeMemberRole(guildId, userId, live.discord.confirmedRoleId).catch(() => undefined);
+  }
+  await Promise.all([
+    refreshRegistrationMessageViaRest(live.id).catch(() => undefined),
+    ensureDropMapEmbedViaRest(live).catch(() => undefined),
+  ]);
 }
 
 export async function resolveDiscordPlayerViaRest(

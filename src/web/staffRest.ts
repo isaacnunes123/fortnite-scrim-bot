@@ -8,10 +8,11 @@ import {
   flushStore,
   getActiveBan,
   getScrim,
+  listInvites,
   normalizeDrop,
   patchScrim,
   pullRemoteStore,
-  removeInvite,
+  removePlayer,
 } from "../scrims/store.js";
 import { applyPlayerDropViaRest } from "./dropRest.js";
 import {
@@ -20,6 +21,7 @@ import {
   postMatchCodeViaRest,
   refreshLeaveMessageViaRest,
   refreshRegistrationMessageViaRest,
+  removePlayerFromLobbyViaRest,
   resolveDiscordPlayerViaRest,
   setDropMarkingOpenViaRest,
   setFillChatOpenViaRest,
@@ -299,9 +301,17 @@ export function registerStaffRestRoutes(app: Express): void {
 
   app.delete("/api/scrims/:id/invites/:inviteId", requireAuth, async (req, res) => {
     await pullRemoteStore();
-    if (!removeInvite(String(req.params.id), String(req.params.inviteId))) {
-      res.status(404).json({ error: "Convite não encontrado" });
+    const scrimId = String(req.params.id);
+    const inviteId = String(req.params.inviteId);
+    const invite = listInvites(scrimId).find((item) => item.id === inviteId);
+    const scrim = getScrim(scrimId);
+    if (!invite) {
+      res.status(404).json({ error: "Player não encontrado nesta scrim" });
       return;
+    }
+    removePlayer(scrimId, invite.discordUserId);
+    if (scrim) {
+      await removePlayerFromLobbyViaRest(scrim, invite.discordUserId).catch(() => undefined);
     }
     await commitJson(res, 200, { ok: true });
   });

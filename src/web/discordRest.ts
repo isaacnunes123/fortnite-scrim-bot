@@ -96,7 +96,17 @@ export function discordAvatarUrl(userId: string, avatar?: string | null): string
 }
 
 export async function addMemberRole(guildId: string, userId: string, roleId: string): Promise<void> {
+  if (!guildId || !userId || !roleId) {
+    return;
+  }
   await discordRequest("PUT", `/guilds/${guildId}/members/${userId}/roles/${roleId}`);
+}
+
+export async function takeMemberRole(guildId: string, userId: string, roleId: string): Promise<void> {
+  if (!guildId || !userId || !roleId) {
+    return;
+  }
+  await discordRequest("DELETE", `/guilds/${guildId}/members/${userId}/roles/${roleId}`);
 }
 
 export async function fetchGuildMember(
