@@ -132,7 +132,7 @@ export function MapBoard({
     if (!image?.naturalWidth || !viewport?.clientWidth) {
       return;
     }
-    if (window.innerWidth > 720) {
+    if (window.innerWidth > 720 || !compact) {
       viewport.style.aspectRatio = `${image.naturalWidth} / ${image.naturalHeight}`;
     } else {
       viewport.style.aspectRatio = "unset";

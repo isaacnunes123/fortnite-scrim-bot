@@ -824,6 +824,7 @@ code {
   width: 100%;
   height: auto;
   min-height: 220px;
+  object-fit: contain;
   pointer-events: none;
 }
 
@@ -2008,26 +2009,29 @@ code {
 .boards-detail-closed .boards-drop-list {
   flex: 1;
   margin: 0;
-  max-height: min(78vh, 920px);
   min-height: 0;
   overflow: auto;
 }
 
 .boards-detail-closed .map-viewport {
-  aspect-ratio: unset !important;
-  height: min(78vh, 920px);
-  min-height: 420px;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  aspect-ratio: 4 / 3;
 }
 
 .boards-detail-closed .map-viewport .map-stage,
 .boards-detail-closed .map-board {
-  height: 100%;
+  width: 100%;
+  height: auto;
 }
 
 .boards-detail-closed .map-board > canvas.map-art {
-  height: 100%;
+  display: block;
+  width: 100%;
+  height: auto;
   min-height: 0;
-  object-fit: fill;
+  object-fit: contain;
 }
 
 .boards-detail-closed .boards-table-card {
@@ -2064,11 +2068,14 @@ code {
 
   .boards-detail-closed .boards-closed-maprow {
     grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
   .boards-detail-closed .map-viewport {
-    height: min(70vh, 720px);
-    min-height: 280px;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 4 / 3;
   }
 
   .boards-detail-closed .boards-drop-list {
