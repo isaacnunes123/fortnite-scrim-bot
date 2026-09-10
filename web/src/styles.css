@@ -975,47 +975,54 @@ code {
   position: absolute;
   z-index: 4;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 2px;
-  max-width: 22%;
-  transform: translate(-50%, -42%) scale(calc(var(--marker-scale, 1) / var(--map-zoom, 1)));
-  transform-origin: center center;
+  justify-content: center;
+  gap: 2.5%;
+  box-sizing: border-box;
+  overflow: hidden;
   pointer-events: none;
+  container-type: size;
 }
 
 .drop-marker {
   display: flex;
+  flex: 1 1 0;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  max-width: 100%;
+  justify-content: center;
+  gap: 0.1em;
+  min-width: 0;
+  max-width: calc(100% / var(--marker-count, 1));
+  height: 100%;
+  font-size: min(calc(var(--marker-scale, 1.4) / var(--slot-w, 4) * 100cqi), 48cqb);
 }
 
 .drop-marker-face {
-  width: 28px;
-  height: 28px;
+  width: min(1em, 86%, 52cqb);
+  height: min(1em, 86%, 52cqb);
+  flex-shrink: 0;
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid var(--claim-role, #1a1418);
-  box-shadow: 0 0 0 1px #0a090b, 0 2px 6px rgba(0, 0, 0, 0.55);
+  border: 0.07em solid var(--claim-role, #1a1418);
+  box-shadow: 0 0 0 0.045em #0a090b, 0 0.05em 0.14em rgba(0, 0, 0, 0.55);
   background: #111;
 }
 
 .drop-marker-name {
   color: #fff;
   font-family: "Barlow Condensed", Impact, sans-serif;
-  font-size: 11px;
+  font-size: 0.32em;
   font-weight: 800;
   line-height: 1;
   text-align: center;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  max-width: 9.5em;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  -webkit-text-stroke: 2.4px #0a090b;
+  -webkit-text-stroke: 0.14em #0a090b;
   paint-order: stroke fill;
 }
 

@@ -3,7 +3,7 @@ import type { DropSpot } from "./api";
 import { dropIsFull, listDropClaims, teamOnDrop } from "./drops";
 import {
   centroidOf,
-  claimAnchor,
+  claimSlot,
   clickPercent,
   findPlayDrop,
   markerScale,
@@ -28,9 +28,12 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-function shortNick(value: string): string {
+function shortNick(value: string, maxChars = 10): string {
   const nick = value.trim();
-  return nick.length > 16 ? `${nick.slice(0, 15)}…` : nick;
+  if (nick.length <= maxChars) {
+    return nick;
+  }
+  return `${nick.slice(0, Math.max(1, maxChars - 1))}…`;
 }
 
 function nextDropName(drops: DropSpot[]): string {
@@ -446,11 +449,7 @@ export function MapBoard({
               transform: `translate(${pan.x}px, ${pan.y}px)`,
             }}
           >
-            <div
-              ref={boardRef}
-              className={`map-board ${play ? "play" : ""}`}
-              style={{ ["--map-zoom" as string]: String(zoom) }}
-            >
+            <div ref={boardRef} className={`map-board ${play ? "play" : ""}`}>
               <canvas className="map-art" ref={canvasRef} />
               <svg className="map-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
               {drops.map((drop) => {
@@ -498,40 +497,50 @@ export function MapBoard({
                 const claims = listDropClaims(drop);
                 const mine = teamOnDrop(drop, myTeam ?? "");
                 const full = dropIsFull(drop, occupancyLimit, myTeam, drops, maxContestedDrops);
+                const slot = claims.length ? claimSlot(drop.vertices) : null;
+                const scale = slot ? markerScale(drop.vertices, claims.length) : 1;
                 return (
                   <div key={`${drop.id}-markers`} className="drop-layer">
-                    {claims.length > 0 ? (
-                      claims.map((claim, index) => {
-                        const anchor = claimAnchor(drop.vertices, index, claims.length);
-                        const scale = markerScale(drop.vertices);
-                        return (
+                    {slot ? (
+                      <div
+                        className={`drop-markers ${mine ? "mine" : ""}`}
+                        style={{
+                          left: `${slot.left}%`,
+                          top: `${slot.top}%`,
+                          width: `${slot.width}%`,
+                          height: `${slot.height}%`,
+                          ["--marker-scale" as string]: String(scale),
+                          ["--marker-count" as string]: String(claims.length),
+                          ["--slot-w" as string]: String(slot.width),
+                          ["--slot-h" as string]: String(slot.height),
+                        }}
+                      >
+                        {claims.map((claim, index) => (
                           <div
                             key={`${drop.id}-${claim.teamName}-${index}`}
-                            className={`drop-markers ${mine ? "mine" : ""}`}
+                            className="drop-marker"
                             style={{
-                              left: `${anchor.x}%`,
-                              top: `${anchor.y}%`,
-                              ["--marker-scale" as string]: String(scale),
                               ["--claim-role" as string]: claim.roleColor || "#1a1418",
                             }}
                           >
-                            <div className="drop-marker">
-                              <img
-                                className="drop-marker-face"
-                                src={
-                                  claim.avatarUrl ||
-                                  `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(claim.userId || "0") % 5n)}.png`
-                                }
-                                alt=""
-                                referrerPolicy="no-referrer"
-                              />
-                              <b className="drop-marker-name">
-                                {shortNick(claim.displayName || claim.teamName || "Drop")}
-                              </b>
-                            </div>
+                            <img
+                              className="drop-marker-face"
+                              src={
+                                claim.avatarUrl ||
+                                `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(claim.userId || "0") % 5n)}.png`
+                              }
+                              alt=""
+                              referrerPolicy="no-referrer"
+                            />
+                            <b className="drop-marker-name">
+                              {shortNick(
+                                claim.displayName || claim.teamName || "Drop",
+                                scale < 1.5 ? 7 : 10,
+                              )}
+                            </b>
                           </div>
-                        );
-                      })
+                        ))}
+                      </div>
                     ) : null}
                     <button
                       type="button"

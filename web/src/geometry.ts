@@ -65,32 +65,46 @@ export function polygonBox(vertices: Vertex[]): {
   return { minX, minY, maxX, maxY, width: Math.max(0.8, maxX - minX), height: Math.max(0.8, maxY - minY) };
 }
 
-/** Âncora da foto/nick por dentro do polígono, não no centro solto do pin. */
-export function claimAnchor(vertices: Vertex[], index: number, count: number): Vertex {
+function boxPad(size: number): number {
+  return Math.min(size * 0.2, Math.max(0.16, size * 0.12));
+}
+
+/** Retângulo interno do drop (bbox com padding) para foto/nick. */
+export function claimSlot(vertices: Vertex[]): {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+} {
   const box = polygonBox(vertices);
-  const insetX = Math.min(box.width * 0.22, Math.max(0.6, box.width * 0.12));
-  const insetY = Math.min(box.height * 0.28, Math.max(0.7, box.height * 0.16));
-  const left = box.minX + insetX;
-  const right = box.maxX - insetX;
-  const top = box.minY + insetY;
-  const bottom = box.maxY - insetY;
-  const mid = centroidOf(vertices);
-  const cx = Math.min(right, Math.max(left, mid.x));
-  const cy = Math.min(bottom - box.height * 0.08, Math.max(top + box.height * 0.06, mid.y));
-  if (count <= 1) {
-    return { x: cx, y: cy };
-  }
-  const span = Math.max(0.4, right - left);
-  const t = index / Math.max(1, count - 1);
+  const padX = boxPad(box.width);
+  const padY = boxPad(box.height);
   return {
-    x: left + span * t,
-    y: cy,
+    left: box.minX + padX,
+    top: box.minY + padY,
+    width: Math.max(0.4, box.width - padX * 2),
+    height: Math.max(0.4, box.height - padY * 2),
   };
 }
 
-export function markerScale(vertices: Vertex[]): number {
-  const box = polygonBox(vertices);
-  return Math.min(1, Math.max(0.42, Math.min(box.width / 9, box.height / 8)));
+/** Centro de cada claim dentro do slot: 1 no meio, 2+ fatiados esquerda/direita. */
+export function claimAnchor(vertices: Vertex[], index: number, count: number): Vertex {
+  const slot = claimSlot(vertices);
+  const n = Math.max(1, count);
+  const col = slot.width / n;
+  return {
+    x: slot.left + col * (index + 0.5),
+    y: slot.top + slot.height * 0.46,
+  };
+}
+
+/** Diâmetro da face em % da largura do mapa, limitado ao slot. */
+export function markerScale(vertices: Vertex[], count = 1): number {
+  const slot = claimSlot(vertices);
+  const n = Math.max(1, count);
+  const fromW = (slot.width / n) * 0.46;
+  const fromH = slot.height * 0.5;
+  return Math.min(3.1, Math.max(1.02, Math.min(fromW, fromH)));
 }
 
 export function clickPercent(
