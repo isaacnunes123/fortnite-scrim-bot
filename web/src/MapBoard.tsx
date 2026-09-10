@@ -540,7 +540,7 @@ export function MapBoard({
                             <b className="drop-marker-name">
                               {shortNick(
                                 claim.displayName || claim.teamName || "Drop",
-                                contested || scale >= 1.25 ? 14 : 11,
+                                contested ? 17 : scale >= 1.25 ? 14 : 11,
                               )}
                             </b>
                           </div>

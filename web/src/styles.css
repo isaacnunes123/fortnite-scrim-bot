@@ -988,7 +988,8 @@ code {
 .drop-markers.stacked {
   flex-direction: column;
   justify-content: space-evenly;
-  gap: 2%;
+  gap: 1%;
+  overflow: visible;
 }
 
 .drop-markers.split {
@@ -1018,9 +1019,10 @@ code {
   max-width: 100%;
   height: auto;
   min-height: 0;
+  overflow: visible;
   font-size: min(
     calc(var(--marker-scale, 1.6) / var(--slot-w, 4) * 100cqi),
-    calc(40cqb / var(--marker-count, 2))
+    calc(48cqb / var(--marker-count, 2))
   );
 }
 
@@ -1076,7 +1078,8 @@ code {
 
 .drop-markers.stacked .drop-marker-name,
 .drop-markers.split .drop-marker-name {
-  font-size: clamp(8px, 17cqi, 0.85em);
+  font-size: clamp(8px, 17cqi, 0.95em);
+  max-width: 118%;
 }
 
 .drop-pin.has-claims {

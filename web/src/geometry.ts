@@ -87,10 +87,13 @@ export function claimSlot(vertices: Vertex[]): {
   };
 }
 
-/** Empilha 2+ claims se o bbox for mais alto que largo (ou quadrado). */
+/** Empilha 2 claims sempre; 3+ só se o bbox for mais alto que largo. */
 export function claimLayout(vertices: Vertex[], count: number): "stack" | "row" {
   if (count <= 1) {
     return "row";
+  }
+  if (count === 2) {
+    return "stack";
   }
   const slot = claimSlot(vertices);
   return slot.height >= slot.width ? "stack" : "row";
@@ -131,12 +134,12 @@ export function markerScale(vertices: Vertex[], count = 1): number {
     return Math.min(3.45, Math.max(1.18, Math.min(fromW, fromH)));
   }
   if (claimLayout(vertices, n) === "stack") {
-    const fromW = slot.width * 0.56;
-    const fromH = (slot.height / n) * 0.5;
-    return Math.min(3.45, Math.max(1.05, Math.min(fromW, fromH)));
+    const fromW = slot.width * 0.67;
+    const fromH = (slot.height / n) * 0.6;
+    return Math.min(3.45, Math.max(1.15, Math.min(fromW, fromH)));
   }
   const square = Math.min(slot.width / n, slot.height);
-  return Math.min(3.45, Math.max(1.05, square * 0.52));
+  return Math.min(3.45, Math.max(1.15, square * 0.62));
 }
 
 export function clickPercent(
