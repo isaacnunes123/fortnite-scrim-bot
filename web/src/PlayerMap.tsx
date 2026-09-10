@@ -115,7 +115,7 @@ export function PlayerMap() {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dropId: drop.id }),
+      body: JSON.stringify({ dropId: drop.id, dropName: drop.name }),
     });
     const data = await response.json();
     setSaving(false);

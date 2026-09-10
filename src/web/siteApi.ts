@@ -1160,8 +1160,12 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
       return;
     }
     let dropId = String(req.body?.dropId ?? "");
+    const dropName = String(req.body?.dropName ?? "").trim();
     if (!dropId && req.body?.x != null && req.body?.y != null) {
       dropId = findDropAt(live.id, Number(req.body.x), Number(req.body.y))?.id ?? "";
+    }
+    if (!dropId && dropName) {
+      dropId = live.drops.find((item) => item.name.trim() === dropName)?.id ?? dropName;
     }
     if (!dropId) {
       res.status(400).json({ error: "Clique dentro de um drop" });

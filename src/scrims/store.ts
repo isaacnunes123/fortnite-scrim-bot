@@ -1065,16 +1065,12 @@ export function listLogs(scrimId?: string, limit = 80): ActivityLog[] {
   return rows.slice(0, limit);
 }
 
-export function cloneDrops(drops: DropSpot[]): DropSpot[] {
+export function cloneDrops(drops: DropSpot[], options?: { newIds?: boolean }): DropSpot[] {
   return drops.map((drop) =>
     normalizeDrop({
       ...drop,
-      id: randomUUID(),
-      claims: [],
-      claimedByTeam: null,
-      claimedByUserId: null,
-      claimedByName: null,
-      claimedByAvatarUrl: null,
+      id: options?.newIds ? randomUUID() : drop.id,
+      claims: listDropClaims(drop),
     }),
   );
 }
@@ -1156,7 +1152,7 @@ export function patchTemplate(id: string, patch: Partial<MapTemplate>): MapTempl
       scrim.mapImageUrl = next.mapImageUrl;
     }
     if (next.drops.length > 0 && scrim.drops.length === 0) {
-      scrim.drops = cloneDrops(next.drops);
+      scrim.drops = cloneDrops(next.drops, { newIds: true });
       if (!imageChanged) {
         scrim.mapImageUrl = next.mapImageUrl || scrim.mapImageUrl;
       }
@@ -1291,7 +1287,7 @@ export function ensureScrimHasDrops(scrimId: string): Scrim | null {
     return scrim;
   }
   return patchScrim(scrim.id, {
-    drops: cloneDrops(template.drops),
+    drops: cloneDrops(template.drops, { newIds: true }),
     mapImageUrl: template.mapImageUrl || scrim.mapImageUrl,
   });
 }
@@ -1347,7 +1343,7 @@ export function createScrim(input: {
     discord: null,
     provisionStatus: "pending",
     provisionError: null,
-    drops: cloneDrops(template.drops),
+    drops: cloneDrops(template.drops, { newIds: true }),
     dropsUpdatedAt: "",
     templateId: template.id,
     templateName: template.name,
@@ -1588,7 +1584,13 @@ export function claimDrop(
   if (!scrim) {
     throw new Error("Scrim não encontrada");
   }
-  const drop = scrim.drops.find((item) => item.id === dropId);
+  const needle = dropId.trim();
+  const drop =
+    scrim.drops.find((item) => item.id === needle) ??
+    scrim.drops.find((item) => item.name.trim() === needle) ??
+    scrim.drops.find(
+      (item) => item.name.trim().toLowerCase() === needle.toLowerCase(),
+    );
   if (!drop) {
     throw new Error("Drop não existe");
   }
