@@ -87,19 +87,35 @@ export function claimSlot(vertices: Vertex[]): {
   };
 }
 
-/** Empilha 2 claims sempre; 3+ só se o bbox for mais alto que largo. */
+/** 2 claims: empilha; lado a lado só se o bbox for bem mais largo que alto. */
 export function claimLayout(vertices: Vertex[], count: number): "stack" | "row" {
   if (count <= 1) {
     return "row";
   }
-  if (count === 2) {
-    return "stack";
-  }
   const slot = claimSlot(vertices);
+  if (count === 2) {
+    return slot.width >= slot.height * 1.65 ? "row" : "stack";
+  }
   return slot.height >= slot.width ? "stack" : "row";
 }
 
-/** Centro de cada claim: 1 no meio; 2+ em coluna se alto, senão em faixas quadradas. */
+/** Célula de um claim: slot inteiro, metade da altura (stack) ou da largura (row). */
+export function claimCell(
+  vertices: Vertex[],
+  count: number,
+): { width: number; height: number } {
+  const slot = claimSlot(vertices);
+  const n = Math.max(1, count);
+  if (n <= 1) {
+    return { width: slot.width, height: slot.height };
+  }
+  if (claimLayout(vertices, n) === "stack") {
+    return { width: slot.width, height: slot.height / n };
+  }
+  return { width: slot.width / n, height: slot.height };
+}
+
+/** Centro de cada claim: 1 no meio; 2+ em coluna se alto, senão em faixas. */
 export function claimAnchor(vertices: Vertex[], index: number, count: number): Vertex {
   const slot = claimSlot(vertices);
   const n = Math.max(1, count);
@@ -117,29 +133,21 @@ export function claimAnchor(vertices: Vertex[], index: number, count: number): V
     };
   }
   const col = slot.width / n;
-  const square = Math.min(col, slot.height);
   return {
     x: slot.left + col * (index + 0.5),
-    y: slot.top + (slot.height - square) / 2 + square * 0.46,
+    y: slot.top + slot.height * 0.46,
   };
 }
 
-/** Diâmetro da face em % da largura do mapa, limitado ao slot. */
+const MARKER_FACE_MAX = 2.55;
+const MARKER_FACE_MIN = 1.08;
+
+/** Diâmetro da face em % do mapa, a partir da célula do claim (não do POI inteiro). */
 export function markerScale(vertices: Vertex[], count = 1): number {
-  const slot = claimSlot(vertices);
-  const n = Math.max(1, count);
-  if (n <= 1) {
-    const fromW = slot.width * 0.58;
-    const fromH = slot.height * 0.52;
-    return Math.min(3.45, Math.max(1.18, Math.min(fromW, fromH)));
-  }
-  if (claimLayout(vertices, n) === "stack") {
-    const fromW = slot.width * 0.67;
-    const fromH = (slot.height / n) * 0.6;
-    return Math.min(3.45, Math.max(1.15, Math.min(fromW, fromH)));
-  }
-  const square = Math.min(slot.width / n, slot.height);
-  return Math.min(3.45, Math.max(1.15, square * 0.62));
+  const cell = claimCell(vertices, count);
+  const fromW = cell.width * 0.68;
+  const fromH = cell.height * 0.54;
+  return Math.min(MARKER_FACE_MAX, Math.max(MARKER_FACE_MIN, Math.min(fromW, fromH)));
 }
 
 export function clickPercent(

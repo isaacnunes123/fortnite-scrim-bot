@@ -976,69 +976,62 @@ code {
   z-index: 4;
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  gap: 2.5%;
+  gap: 2%;
   box-sizing: border-box;
   overflow: hidden;
   pointer-events: none;
-  container-type: size;
 }
 
 .drop-markers.stacked {
   flex-direction: column;
-  justify-content: space-evenly;
-  gap: 1%;
-  overflow: visible;
+  justify-content: stretch;
+  gap: 2%;
 }
 
 .drop-markers.split {
   flex-direction: row;
   justify-content: center;
-  align-items: center;
+  align-items: stretch;
   gap: 2%;
 }
 
 .drop-marker {
   display: flex;
   flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  width: auto;
+  height: auto;
+  overflow: hidden;
+  container-type: size;
+  container-name: claim;
+}
+
+.drop-marker-fit {
+  display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0.08em;
-  min-width: 0;
-  max-width: calc(100% / var(--marker-count, 1));
-  height: 100%;
-  overflow: hidden;
-  font-size: min(calc(var(--marker-scale, 1.6) / var(--slot-w, 4) * 100cqi), 46cqb);
-}
-
-.drop-markers.stacked .drop-marker {
-  flex: 1 1 0;
-  width: 100%;
   max-width: 100%;
-  height: auto;
-  min-height: 0;
-  overflow: visible;
+  max-height: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   font-size: min(
-    calc(var(--marker-scale, 1.6) / var(--slot-w, 4) * 100cqi),
-    calc(48cqb / var(--marker-count, 2))
+    calc(var(--marker-scale, 1.2) / var(--cell-w, 4) * 100cqi),
+    calc(var(--marker-scale, 1.2) / var(--cell-h, 3) * 100cqb)
   );
 }
 
-.drop-markers.split .drop-marker {
-  --square: min(100cqb, calc(100cqi / var(--marker-count, 2)));
-  flex: 0 0 auto;
-  width: var(--square);
-  height: var(--square);
-  max-width: var(--square);
-  aspect-ratio: 1 / 1;
-  font-size: min(calc(var(--marker-scale, 1.6) / var(--slot-w, 4) * 100cqi), 46cqb);
-}
-
 .drop-marker-face {
-  width: min(1.08em, 44cqmin);
-  height: min(1.08em, 44cqmin);
+  width: 1em;
+  height: 1em;
+  max-width: 72cqi;
+  max-height: 56cqb;
   aspect-ratio: 1 / 1;
   flex: 0 0 auto;
   border-radius: 50%;
@@ -1049,17 +1042,11 @@ code {
   background: #111;
 }
 
-.drop-markers.stacked .drop-marker-face,
-.drop-markers.split .drop-marker-face {
-  width: 1em;
-  height: 1em;
-}
-
 .drop-marker-name {
   flex: 0 0 auto;
   color: #fff;
   font-family: "Barlow Condensed", Impact, sans-serif;
-  font-size: clamp(8px, 17cqi, 0.46em);
+  font-size: clamp(6px, 0.46em, 0.5em);
   font-weight: 800;
   line-height: 1;
   text-align: center;
@@ -1074,12 +1061,6 @@ code {
   white-space: nowrap;
   -webkit-text-stroke: 0.18em #000;
   paint-order: stroke fill;
-}
-
-.drop-markers.stacked .drop-marker-name,
-.drop-markers.split .drop-marker-name {
-  font-size: clamp(8px, 17cqi, 0.95em);
-  max-width: 118%;
 }
 
 .drop-pin.has-claims {

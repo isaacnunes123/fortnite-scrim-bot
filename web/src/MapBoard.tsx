@@ -3,6 +3,7 @@ import type { DropSpot } from "./api";
 import { dropIsFull, listDropClaims, teamOnDrop } from "./drops";
 import {
   centroidOf,
+  claimCell,
   claimLayout,
   claimSlot,
   clickPercent,
@@ -499,12 +500,13 @@ export function MapBoard({
                 const mine = teamOnDrop(drop, myTeam ?? "");
                 const full = dropIsFull(drop, occupancyLimit, myTeam, drops, maxContestedDrops);
                 const slot = claims.length ? claimSlot(drop.vertices) : null;
+                const cell = slot ? claimCell(drop.vertices, claims.length) : null;
                 const scale = slot ? markerScale(drop.vertices, claims.length) : 1;
                 const contested = claims.length >= 2;
                 const layout = contested ? claimLayout(drop.vertices, claims.length) : "row";
                 return (
                   <div key={`${drop.id}-markers`} className="drop-layer">
-                    {slot ? (
+                    {slot && cell ? (
                       <div
                         className={`drop-markers ${mine ? "mine" : ""} ${
                           contested ? (layout === "stack" ? "stacked" : "split") : ""
@@ -516,8 +518,8 @@ export function MapBoard({
                           height: `${slot.height}%`,
                           ["--marker-scale" as string]: String(scale),
                           ["--marker-count" as string]: String(claims.length),
-                          ["--slot-w" as string]: String(slot.width),
-                          ["--slot-h" as string]: String(slot.height),
+                          ["--cell-w" as string]: String(cell.width),
+                          ["--cell-h" as string]: String(cell.height),
                         }}
                       >
                         {claims.map((claim, index) => (
@@ -528,21 +530,20 @@ export function MapBoard({
                               ["--claim-role" as string]: claim.roleColor || "#1a1418",
                             }}
                           >
-                            <img
-                              className="drop-marker-face"
-                              src={
-                                claim.avatarUrl ||
-                                `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(claim.userId || "0") % 5n)}.png`
-                              }
-                              alt=""
-                              referrerPolicy="no-referrer"
-                            />
-                            <b className="drop-marker-name">
-                              {shortNick(
-                                claim.displayName || claim.teamName || "Drop",
-                                contested ? 17 : scale >= 1.25 ? 14 : 11,
-                              )}
-                            </b>
+                            <div className="drop-marker-fit">
+                              <img
+                                className="drop-marker-face"
+                                src={
+                                  claim.avatarUrl ||
+                                  `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(claim.userId || "0") % 5n)}.png`
+                                }
+                                alt=""
+                                referrerPolicy="no-referrer"
+                              />
+                              <b className="drop-marker-name">
+                                {shortNick(claim.displayName || claim.teamName || "Drop", 16)}
+                              </b>
+                            </div>
                           </div>
                         ))}
                       </div>
