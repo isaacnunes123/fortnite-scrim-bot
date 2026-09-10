@@ -87,14 +87,37 @@ export function claimSlot(vertices: Vertex[]): {
   };
 }
 
-/** Centro de cada claim dentro do slot: 1 no meio, 2+ fatiados esquerda/direita. */
+/** Empilha 2+ claims se o bbox for mais alto que largo (ou quadrado). */
+export function claimLayout(vertices: Vertex[], count: number): "stack" | "row" {
+  if (count <= 1) {
+    return "row";
+  }
+  const slot = claimSlot(vertices);
+  return slot.height >= slot.width ? "stack" : "row";
+}
+
+/** Centro de cada claim: 1 no meio; 2+ em coluna se alto, senão em faixas quadradas. */
 export function claimAnchor(vertices: Vertex[], index: number, count: number): Vertex {
   const slot = claimSlot(vertices);
   const n = Math.max(1, count);
+  if (n <= 1) {
+    return {
+      x: slot.left + slot.width * 0.5,
+      y: slot.top + slot.height * 0.46,
+    };
+  }
+  if (claimLayout(vertices, n) === "stack") {
+    const row = slot.height / n;
+    return {
+      x: slot.left + slot.width * 0.5,
+      y: slot.top + row * (index + 0.5),
+    };
+  }
   const col = slot.width / n;
+  const square = Math.min(col, slot.height);
   return {
     x: slot.left + col * (index + 0.5),
-    y: slot.top + slot.height * 0.46,
+    y: slot.top + (slot.height - square) / 2 + square * 0.46,
   };
 }
 
@@ -102,9 +125,18 @@ export function claimAnchor(vertices: Vertex[], index: number, count: number): V
 export function markerScale(vertices: Vertex[], count = 1): number {
   const slot = claimSlot(vertices);
   const n = Math.max(1, count);
-  const fromW = (slot.width / n) * 0.58;
-  const fromH = slot.height * 0.52;
-  return Math.min(3.45, Math.max(1.18, Math.min(fromW, fromH)));
+  if (n <= 1) {
+    const fromW = slot.width * 0.58;
+    const fromH = slot.height * 0.52;
+    return Math.min(3.45, Math.max(1.18, Math.min(fromW, fromH)));
+  }
+  if (claimLayout(vertices, n) === "stack") {
+    const fromW = slot.width * 0.56;
+    const fromH = (slot.height / n) * 0.5;
+    return Math.min(3.45, Math.max(1.05, Math.min(fromW, fromH)));
+  }
+  const square = Math.min(slot.width / n, slot.height);
+  return Math.min(3.45, Math.max(1.05, square * 0.52));
 }
 
 export function clickPercent(

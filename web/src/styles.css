@@ -985,6 +985,19 @@ code {
   container-type: size;
 }
 
+.drop-markers.stacked {
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: 2%;
+}
+
+.drop-markers.split {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  gap: 2%;
+}
+
 .drop-marker {
   display: flex;
   flex: 1 1 0;
@@ -999,24 +1012,52 @@ code {
   font-size: min(calc(var(--marker-scale, 1.6) / var(--slot-w, 4) * 100cqi), 46cqb);
 }
 
-.drop-marker-face {
-  width: min(1.08em, 78%, 44%);
-  height: min(1.08em, 78%, 44%);
-  flex: 0 1 auto;
-  min-width: 0;
+.drop-markers.stacked .drop-marker {
+  flex: 1 1 0;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
   min-height: 0;
+  font-size: min(
+    calc(var(--marker-scale, 1.6) / var(--slot-w, 4) * 100cqi),
+    calc(40cqb / var(--marker-count, 2))
+  );
+}
+
+.drop-markers.split .drop-marker {
+  --square: min(100cqb, calc(100cqi / var(--marker-count, 2)));
+  flex: 0 0 auto;
+  width: var(--square);
+  height: var(--square);
+  max-width: var(--square);
+  aspect-ratio: 1 / 1;
+  font-size: min(calc(var(--marker-scale, 1.6) / var(--slot-w, 4) * 100cqi), 46cqb);
+}
+
+.drop-marker-face {
+  width: min(1.08em, 44cqmin);
+  height: min(1.08em, 44cqmin);
+  aspect-ratio: 1 / 1;
+  flex: 0 0 auto;
   border-radius: 50%;
   object-fit: cover;
+  object-position: center;
   border: 0.07em solid var(--claim-role, #1a1418);
   box-shadow: 0 0 0 0.045em #000, 0 0.05em 0.14em rgba(0, 0, 0, 0.55);
   background: #111;
+}
+
+.drop-markers.stacked .drop-marker-face,
+.drop-markers.split .drop-marker-face {
+  width: 1em;
+  height: 1em;
 }
 
 .drop-marker-name {
   flex: 0 0 auto;
   color: #fff;
   font-family: "Barlow Condensed", Impact, sans-serif;
-  font-size: clamp(8px, calc(17cqi / var(--marker-count, 1)), 0.46em);
+  font-size: clamp(8px, 17cqi, 0.46em);
   font-weight: 800;
   line-height: 1;
   text-align: center;
@@ -1031,6 +1072,11 @@ code {
   white-space: nowrap;
   -webkit-text-stroke: 0.18em #000;
   paint-order: stroke fill;
+}
+
+.drop-markers.stacked .drop-marker-name,
+.drop-markers.split .drop-marker-name {
+  font-size: clamp(8px, 17cqi, 0.85em);
 }
 
 .drop-pin.has-claims {

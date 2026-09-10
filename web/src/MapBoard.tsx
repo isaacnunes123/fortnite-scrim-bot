@@ -3,6 +3,7 @@ import type { DropSpot } from "./api";
 import { dropIsFull, listDropClaims, teamOnDrop } from "./drops";
 import {
   centroidOf,
+  claimLayout,
   claimSlot,
   clickPercent,
   findPlayDrop,
@@ -499,11 +500,15 @@ export function MapBoard({
                 const full = dropIsFull(drop, occupancyLimit, myTeam, drops, maxContestedDrops);
                 const slot = claims.length ? claimSlot(drop.vertices) : null;
                 const scale = slot ? markerScale(drop.vertices, claims.length) : 1;
+                const contested = claims.length >= 2;
+                const layout = contested ? claimLayout(drop.vertices, claims.length) : "row";
                 return (
                   <div key={`${drop.id}-markers`} className="drop-layer">
                     {slot ? (
                       <div
-                        className={`drop-markers ${mine ? "mine" : ""}`}
+                        className={`drop-markers ${mine ? "mine" : ""} ${
+                          contested ? (layout === "stack" ? "stacked" : "split") : ""
+                        }`}
                         style={{
                           left: `${slot.left}%`,
                           top: `${slot.top}%`,
@@ -535,7 +540,7 @@ export function MapBoard({
                             <b className="drop-marker-name">
                               {shortNick(
                                 claim.displayName || claim.teamName || "Drop",
-                                scale < 1.25 ? 11 : 14,
+                                contested || scale >= 1.25 ? 14 : 11,
                               )}
                             </b>
                           </div>
