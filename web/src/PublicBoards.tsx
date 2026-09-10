@@ -352,7 +352,11 @@ function BoardDetail({
       }`,
     );
     setBoard(data.board);
-    const isClosed = normalizeTableCategory(data.board.category) === "closed";
+    const isClosed =
+      normalizeTableCategory(data.board.category) === "closed" ||
+      data.board.kind === "scrim" ||
+      lastListPath.includes("div=closed") ||
+      lastListPath.includes("/closed");
     onClosedBrand(isClosed);
     if (isClosed) {
       lastListPath = "/tabelas?div=closed";
@@ -390,7 +394,8 @@ function BoardDetail({
   const yuniteTitle = board.yunite.title?.trim();
   const isManual = board.source === "manual";
   const showMap = Boolean(board.hasMap);
-  const isClosed = normalizeTableCategory(board.category) === "closed";
+  const isClosed =
+    normalizeTableCategory(board.category) === "closed" || board.kind === "scrim";
 
   const tableCard = (
     <div className="card boards-table-card">
@@ -463,7 +468,7 @@ function BoardDetail({
   );
 
   return (
-    <section className={`boards-detail ${isClosed && showMap ? "boards-detail-closed" : ""}`}>
+    <section className={`boards-detail ${showMap ? "boards-detail-closed" : ""}`}>
       <div className="boards-detail-head">
         <button className="btn secondary" type="button" onClick={() => go(lastListPath)}>
           Voltar
@@ -485,7 +490,7 @@ function BoardDetail({
         </span>
       </div>
 
-      {isClosed && showMap ? (
+      {showMap ? (
         <div className="boards-closed-stage">
           <div className="boards-closed-maprow">
             <div className="card boards-map-card">

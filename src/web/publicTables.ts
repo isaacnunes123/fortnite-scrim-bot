@@ -8,7 +8,6 @@ import {
   listScrims,
   listTables,
   MODE_SIZE,
-  DEFAULT_TABLE_CATEGORY,
   normalizeTableCategory,
   teamCount,
   type DropSpot,
@@ -162,7 +161,7 @@ export function summarizeBoard(scrim: Scrim): PublicBoardSummary {
     hasMap: drops.length > 0,
     kind: "scrim",
     source: scrim.yuniteTournamentId ? "yunite" : "none",
-    category: DEFAULT_TABLE_CATEGORY,
+    category: "closed",
   };
 }
 
