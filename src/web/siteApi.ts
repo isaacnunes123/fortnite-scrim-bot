@@ -67,6 +67,7 @@ import { handleDiscordHttpInteraction } from "./discordInteractions.js";
 import { readFreshBotHeartbeat } from "../bot/heartbeat.js";
 import { resolveMapAccess } from "./dropAuth.js";
 import { applyPlayerDropViaRest } from "./dropRest.js";
+import { registerStaffRestRoutes } from "./staffRest.js";
 
 export type BotPresence = "online" | "offline" | "unknown";
 
@@ -284,27 +285,6 @@ async function resolveBotStatus(local?: BotStatusPayload): Promise<BotStatusPayl
   );
 }
 
-const RAILWAY_DOWN_ERROR =
-  "O processo do bot no Railway não está no ar. Slash commands precisam do gateway. Check-in (Registrar) e criar a categoria usam a API REST na Vercel (Interactions Endpoint URL + DISCORD_TOKEN).";
-
-function isVercelDiscordRestPath(req: Request): boolean {
-  const path = String(req.path || req.url || "").split("?")[0] ?? "";
-  if (/^\/api\/discord\/interactions\/?$/.test(path)) {
-    return true;
-  }
-  if (/^\/api\/public\//.test(path) || /^\/api\/auth\//.test(path) || /^\/api\/map-images\//.test(path)) {
-    return true;
-  }
-  if (req.method === "POST" && /^\/api\/scrims\/?$/.test(path)) {
-    return true;
-  }
-  return req.method === "DELETE" && /^\/api\/scrims\/[^/]+\/?$/.test(path);
-}
-
-function isRailwayDownPayload(status: number, body: string): boolean {
-  return status === 502 || status === 504 || /Application failed to respond/i.test(body);
-}
-
 const lastProvisionKick = new Map<string, number>();
 
 async function kickLobbyProvision(req: Request, scrimId: string): Promise<void> {
@@ -410,62 +390,6 @@ function scrimCreatePayload(scrim: import("../scrims/store.js").Scrim) {
     teamSize: MODE_SIZE[scrim.mode],
     teamCount: teamCount(scrim.id),
   });
-}
-
-async function proxyToBotProcess(req: Request, res: Response): Promise<boolean> {
-  if (!env.botProcessUrl || isVercelDiscordRestPath(req)) {
-    return false;
-  }
-  try {
-    const url = new URL(req.originalUrl || req.url, `${env.botProcessUrl}/`);
-    const headers = new Headers();
-    if (req.headers.cookie) {
-      headers.set("cookie", req.headers.cookie);
-    }
-    const contentType = req.headers["content-type"];
-    if (contentType) {
-      headers.set("content-type", contentType);
-    }
-    const init: RequestInit = {
-      method: req.method,
-      headers,
-      redirect: "manual",
-      signal: AbortSignal.timeout(12_000),
-    };
-    if (req.method !== "GET" && req.method !== "HEAD") {
-      if (Buffer.isBuffer(req.body)) {
-        init.body = new Uint8Array(req.body);
-      } else if (typeof req.body === "string") {
-        init.body = req.body;
-      } else if (req.body != null) {
-        init.body = JSON.stringify(req.body);
-        if (!headers.has("content-type")) {
-          headers.set("content-type", "application/json");
-        }
-      }
-    }
-    const upstream = await fetch(url, init);
-    const buffer = Buffer.from(await upstream.arrayBuffer());
-    const text = buffer.toString("utf8");
-    if (isRailwayDownPayload(upstream.status, text)) {
-      res.status(503).json({ error: RAILWAY_DOWN_ERROR });
-      return true;
-    }
-    res.status(upstream.status);
-    const type = upstream.headers.get("content-type");
-    if (type) {
-      res.setHeader("Content-Type", type);
-    }
-    res.send(buffer);
-    return true;
-  } catch (error) {
-    const name = error instanceof Error ? error.name : "";
-    if (name === "TimeoutError" || name === "AbortError") {
-      res.status(503).json({ error: RAILWAY_DOWN_ERROR });
-      return true;
-    }
-    return false;
-  }
 }
 
 export function setupExpress(app: Express): void {
@@ -844,11 +768,8 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
   app.get("/api/scrims/:id", requireAuth, async (req, res) => {
     await pullRemoteStore();
     const id = String(req.params.id);
-    const scrim = getScrim(id);
+    const scrim = ensureScrimHasDrops(id) ?? getScrim(id);
     if (!scrim) {
-      if (await proxyToBotProcess(req, res)) {
-        return;
-      }
       res.status(404).json({ error: "Scrim não encontrada" });
       return;
     }
@@ -1195,17 +1116,12 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
       fail(res, error, "Não foi possível carregar a tabela");
     }
   });
+
+  registerStaffRestRoutes(app);
 }
 
-export async function botUnavailable(req: Request, res: Response): Promise<void> {
-  if (isVercelDiscordRestPath(req)) {
-    res.status(404).json({ error: "Rota não encontrada" });
-    return;
-  }
-  if (await proxyToBotProcess(req, res)) {
-    return;
-  }
-  res.status(503).json({ error: "Bot Discord offline" });
+export async function botUnavailable(_req: Request, res: Response): Promise<void> {
+  res.status(404).json({ error: "Rota não encontrada" });
 }
 
 export function createSiteApp(): Express {

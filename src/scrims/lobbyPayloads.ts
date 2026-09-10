@@ -143,7 +143,7 @@ export function dropMapMessagePayload(scrim: Scrim): DiscordMessagePayload {
   };
 }
 
-export function fillMessagePayload(scrim: Scrim): DiscordMessagePayload {
+export function fillMessagePayload(scrim: Scrim, open = false): DiscordMessagePayload {
   return {
     embeds: [
       {
@@ -160,7 +160,7 @@ export function fillMessagePayload(scrim: Scrim): DiscordMessagePayload {
           style: 2,
           custom_id: `fill:${scrim.id}`,
           label: "Pedir vaga",
-          disabled: true,
+          disabled: !open,
         },
       ]),
     ],
