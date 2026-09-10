@@ -32,6 +32,8 @@ function shortNick(value: string): string {
   const nick = value.trim();
   return nick.length > 16 ? `${nick.slice(0, 15)}…` : nick;
 }
+
+function nextDropName(drops: DropSpot[]): string {
   let max = 0;
   for (const drop of drops) {
     const n = Number.parseInt(String(drop.name).trim(), 10);
