@@ -12,6 +12,8 @@ import {
   addMemberRole,
   discordRequest,
   fetchGuildMember,
+  fetchGuildRoles,
+  highestMemberRole,
   type DiscordMemberInfo,
 } from "./discordRest.js";
 
@@ -101,10 +103,21 @@ export async function applyPlayerDropViaRest(
   }
   const displayName = member?.displayName || invite.displayName;
   const avatarUrl = member?.avatarUrl || fallbackAvatar(userId);
+  let roleColor = invite.roleColor || "";
+  try {
+    const roles = await fetchGuildRoles();
+    const highest = member ? highestMemberRole(member.roles, roles) : null;
+    if (highest?.color) {
+      roleColor = highest.color;
+    }
+  } catch {
+    /* usa a cor salva no check-in */
+  }
   const drop = claimDrop(scrimId, dropId, invite.teamName, {
     userId,
     displayName,
     avatarUrl,
+    roleColor,
   });
 
   const team = listInvites(scrimId).filter((item) => item.teamName === invite.teamName);

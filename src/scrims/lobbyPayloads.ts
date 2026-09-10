@@ -1,4 +1,4 @@
-import { dropMapUrl, publicBaseUrl } from "./links.js";
+import { dropMapUrl } from "./links.js";
 import { applyEmbedVars, teamCount, type EmbedCopy, type Scrim } from "./store.js";
 import { formatLeaveUntil, formatWindowWhen } from "./time.js";
 
@@ -167,9 +167,58 @@ export function fillMessagePayload(scrim: Scrim, open = false): DiscordMessagePa
   };
 }
 
-export function adminMessagePayload(): DiscordMessagePayload {
+export function adminMessagePayload(scrimId: string, locked = false): DiscordMessagePayload {
   return {
-    content: `Staff: painel em ${publicBaseUrl()}`,
+    embeds: [
+      {
+        color: 0x1a1418,
+        title: "Controle da lobby",
+        description:
+          "Avisos, lock do chat, finalizar (apaga canais e **mantém** mapa/tabela no site) ou excluir tudo (canais + site).",
+      },
+    ],
+    components: [
+      {
+        type: 1,
+        components: [
+          {
+            type: 2,
+            style: 1,
+            custom_id: `nagdrop:${scrimId}`,
+            label: "Avisar sem drop",
+          },
+          {
+            type: 2,
+            style: 1,
+            custom_id: `nagcode:${scrimId}`,
+            label: "Avisar código",
+          },
+          {
+            type: 2,
+            style: 2,
+            custom_id: `lockchat:${scrimId}`,
+            label: locked ? "Unlock chat" : "Lock chat",
+          },
+        ],
+      },
+      {
+        type: 1,
+        components: [
+          {
+            type: 2,
+            style: 2,
+            custom_id: `finish:${scrimId}`,
+            label: "Finalizar scrim",
+          },
+          {
+            type: 2,
+            style: 4,
+            custom_id: `kill:${scrimId}`,
+            label: "Excluir scrim",
+          },
+        ],
+      },
+    ],
   };
 }
 

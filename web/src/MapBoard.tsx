@@ -3,8 +3,10 @@ import type { DropSpot } from "./api";
 import { dropIsFull, listDropClaims, teamOnDrop } from "./drops";
 import {
   centroidOf,
+  claimAnchor,
   clickPercent,
   findPlayDrop,
+  markerScale,
   nearVertex,
   polygonPoints,
   type Vertex,
@@ -14,7 +16,22 @@ const DEFAULT_MAP = "/maps/island.png";
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 10;
 
-function nextDropName(drops: DropSpot[]): string {
+function hexToRgba(hex: string, alpha: number): string {
+  const raw = hex.replace("#", "").trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(raw)) {
+    return `rgba(18, 14, 20, ${alpha})`;
+  }
+  const n = Number.parseInt(raw, 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function shortNick(value: string): string {
+  const nick = value.trim();
+  return nick.length > 16 ? `${nick.slice(0, 15)}…` : nick;
+}
   let max = 0;
   for (const drop of drops) {
     const n = Number.parseInt(String(drop.name).trim(), 10);
@@ -434,21 +451,30 @@ export function MapBoard({
             >
               <canvas className="map-art" ref={canvasRef} />
               <svg className="map-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
-                {drops.map((drop) =>
-                  drop.vertices.length >= 3 ? (
+              {drops.map((drop) => {
+                const claims = listDropClaims(drop);
+                const fillColor = claims[0]?.roleColor;
+                return drop.vertices.length >= 3 ? (
                     <polygon
                       key={drop.id}
                       points={polygonPoints(drop.vertices)}
-                        className={`drop-poly ${listDropClaims(drop).length ? "taken" : "idle"} ${
+                        className={`drop-poly ${claims.length ? "taken" : "idle"} ${
                         teamOnDrop(drop, myTeam ?? "") ? "mine" : ""
                       } ${
                         dropIsFull(drop, occupancyLimit, myTeam, drops, maxContestedDrops) ? "full" : ""
                       } ${
                         hoverId === drop.id || selectedId === drop.id ? "selected" : ""
                       }`}
+                      style={
+                        fillColor
+                          ? {
+                              ["--drop-fill" as string]: hexToRgba(fillColor, 0.42),
+                            }
+                          : undefined
+                      }
                     />
-                  ) : null,
-                )}
+                  ) : null;
+              })}
                 {play
                   ? drops.map((drop) => (
                       <polygon
@@ -473,27 +499,37 @@ export function MapBoard({
                 return (
                   <div key={`${drop.id}-markers`} className="drop-layer">
                     {claims.length > 0 ? (
-                      <div
-                        className={`drop-markers ${mine ? "mine" : ""}`}
-                        style={{ left: `${drop.x}%`, top: `${drop.y}%` }}
-                      >
-                        {claims.map((claim, index) => (
-                          <div key={`${drop.id}-${claim.teamName}-${index}`} className="drop-marker">
-                            <img
-                              className="drop-marker-face"
-                              src={
-                                claim.avatarUrl ||
-                                `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(claim.userId || "0") % 5n)}.png`
-                              }
-                              alt=""
-                              referrerPolicy="no-referrer"
-                            />
-                            <b className="drop-marker-name">
-                              {(claim.displayName || claim.teamName || "Drop").trim()}
-                            </b>
+                      claims.map((claim, index) => {
+                        const anchor = claimAnchor(drop.vertices, index, claims.length);
+                        const scale = markerScale(drop.vertices);
+                        return (
+                          <div
+                            key={`${drop.id}-${claim.teamName}-${index}`}
+                            className={`drop-markers ${mine ? "mine" : ""}`}
+                            style={{
+                              left: `${anchor.x}%`,
+                              top: `${anchor.y}%`,
+                              ["--marker-scale" as string]: String(scale),
+                              ["--claim-role" as string]: claim.roleColor || "#1a1418",
+                            }}
+                          >
+                            <div className="drop-marker">
+                              <img
+                                className="drop-marker-face"
+                                src={
+                                  claim.avatarUrl ||
+                                  `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(claim.userId || "0") % 5n)}.png`
+                                }
+                                alt=""
+                                referrerPolicy="no-referrer"
+                              />
+                              <b className="drop-marker-name">
+                                {shortNick(claim.displayName || claim.teamName || "Drop")}
+                              </b>
+                            </div>
                           </div>
-                        ))}
-                      </div>
+                        );
+                      })
                     ) : null}
                     <button
                       type="button"

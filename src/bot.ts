@@ -126,6 +126,12 @@ async function boot(): Promise<void> {
 
   try {
     await startBot(env.discordToken);
+    const { processExpiredDropDeadlines } = await import("./web/adminLobby.js");
+    setInterval(() => {
+      void processExpiredDropDeadlines().catch((error) => {
+        console.error("[bot] expire drop deadline:", error);
+      });
+    }, 20_000);
   } catch (error) {
     console.error("[bot] Falha ao conectar no Discord:", error);
     console.error("[bot] Processo HTTP segue no ar — Railway não deve matar o healthcheck.");

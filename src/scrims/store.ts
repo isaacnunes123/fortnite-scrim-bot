@@ -33,6 +33,7 @@ export type DropClaim = {
   userId: string;
   displayName: string;
   avatarUrl: string;
+  roleColor: string;
 };
 
 export type DropSpot = {
@@ -66,6 +67,9 @@ export type DiscordLobby = {
   dropMapMessageId: string | null;
   fillVisible: boolean;
   fillChatOpen: boolean;
+  registrationClosed?: boolean;
+  chatLocked?: boolean;
+  adminPanelAt?: string;
 };
 
 export type EmbedCopy = {
@@ -92,7 +96,7 @@ export type ActivityLog = {
   detail: string;
 };
 
-export type ProvisionStatus = "pending" | "ready" | "failed";
+export type ProvisionStatus = "pending" | "ready" | "failed" | "finished";
 
 export type Scrim = {
   id: string;
@@ -207,6 +211,9 @@ export type Invite = {
   fortniteNick: string;
   droppedAt: string | null;
   dropName: string | null;
+  dropDeadlineAt: string | null;
+  roleColor: string;
+  roleName: string;
 };
 
 export type BlacklistEntry = {
@@ -220,10 +227,16 @@ export type BlacklistEntry = {
   scrimId: string;
 };
 
+type CooldownRow = {
+  id: string;
+  until: string;
+};
+
 type StoreFile = {
   scrims: Scrim[];
   invites: Invite[];
   removedInviteIds: string[];
+  checkinCooldowns: CooldownRow[];
   templates: MapTemplate[];
   scrimPresets: ScrimPreset[];
   blacklist: BlacklistEntry[];
@@ -267,6 +280,8 @@ let storeLoading: Promise<void> | null = null;
 let dirty = false;
 let remoteError: string | null = null;
 const CHECKIN_COOLDOWN_MS = 90_000;
+export const DROP_MARK_MS = 180_000;
+export const DROP_TIMEOUT_COOLDOWN_MS = 180_000;
 const reentryUntil = new Map<string, number>();
 
 export function storeRemoteError(): string | null {
@@ -274,11 +289,27 @@ export function storeRemoteError(): string | null {
 }
 
 export function setCheckinCooldown(discordUserId: string, ms = CHECKIN_COOLDOWN_MS): void {
-  reentryUntil.set(discordUserId, Date.now() + ms);
+  const until = Date.now() + ms;
+  reentryUntil.set(discordUserId, until);
+  const store = getStore();
+  const id = discordUserId.trim();
+  if (!id) {
+    return;
+  }
+  const iso = new Date(until).toISOString();
+  store.checkinCooldowns = [
+    ...(store.checkinCooldowns ?? []).filter((row) => row.id !== id),
+    { id, until: iso },
+  ].filter((row) => Date.parse(row.until) > Date.now());
+  persist();
 }
 
 export function remainingCheckinCooldown(discordUserId: string): number {
-  const until = reentryUntil.get(discordUserId) ?? 0;
+  const store = getStore();
+  const persisted = (store.checkinCooldowns ?? []).find((row) => row.id === discordUserId);
+  const persistedUntil = persisted ? Date.parse(persisted.until) : 0;
+  const memoryUntil = reentryUntil.get(discordUserId) ?? 0;
+  const until = Math.max(persistedUntil || 0, memoryUntil);
   const left = Math.ceil((until - Date.now()) / 1000);
   if (left <= 0) {
     reentryUntil.delete(discordUserId);
@@ -305,6 +336,7 @@ function emptyStore(): StoreFile {
     scrims: [],
     invites: [],
     removedInviteIds: [],
+    checkinCooldowns: [],
     templates: defaultTemplates(),
     scrimPresets: [],
     blacklist: [],
@@ -414,6 +446,7 @@ export function listDropClaims(drop: Partial<DropSpot> | null | undefined): Drop
       userId: String(claim.userId ?? ""),
       displayName: String(claim.displayName ?? claim.teamName ?? ""),
       avatarUrl: String(claim.avatarUrl ?? ""),
+      roleColor: String(claim.roleColor ?? ""),
     }));
   }
   if (drop.claimedByTeam) {
@@ -423,6 +456,7 @@ export function listDropClaims(drop: Partial<DropSpot> | null | undefined): Drop
         userId: String(drop.claimedByUserId ?? ""),
         displayName: String(drop.claimedByName ?? drop.claimedByTeam),
         avatarUrl: String(drop.claimedByAvatarUrl ?? ""),
+        roleColor: "",
       },
     ];
   }
@@ -498,7 +532,12 @@ export function normalizeDrop(raw: Partial<DropSpot> & { radius?: number }): Dro
 }
 
 function normalizeProvisionStatus(raw: Partial<Scrim>): ProvisionStatus {
-  if (raw.provisionStatus === "pending" || raw.provisionStatus === "ready" || raw.provisionStatus === "failed") {
+  if (
+    raw.provisionStatus === "pending" ||
+    raw.provisionStatus === "ready" ||
+    raw.provisionStatus === "failed" ||
+    raw.provisionStatus === "finished"
+  ) {
     return raw.provisionStatus;
   }
   return "ready";
@@ -706,10 +745,18 @@ function hydrateStore(parsed: Partial<StoreFile>): StoreFile {
         fortniteNick: invite.fortniteNick ?? "",
         droppedAt: invite.droppedAt ?? null,
         dropName: invite.dropName ?? null,
+        dropDeadlineAt: invite.dropDeadlineAt ?? null,
+        roleColor: String(invite.roleColor ?? ""),
+        roleName: String(invite.roleName ?? ""),
       })),
       removedInviteIds,
     ),
     removedInviteIds,
+    checkinCooldowns: Array.isArray(parsed.checkinCooldowns)
+      ? parsed.checkinCooldowns.filter(
+          (row) => row?.id && Date.parse(String(row.until ?? "")) > Date.now() - 60_000,
+        )
+      : [],
     templates: templates.length > 0 ? templates : defaultTemplates(),
     scrimPresets: mergeLast([repoScrimPresets, dataScrimPresets, storeScrimPresets]),
     blacklist: parsed.blacklist ?? [],
@@ -901,6 +948,11 @@ function overlayLocalOnRemote(remote: StoreFile, local: StoreFile): StoreFile {
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
       .slice(0, 400),
     tables: mergeById(local.tables, remote.tables, (row) => row),
+    checkinCooldowns: mergeById(
+      local.checkinCooldowns ?? [],
+      remote.checkinCooldowns ?? [],
+      (left, right) => (Date.parse(left.until) >= Date.parse(right.until) ? left : right),
+    ).filter((row) => Date.parse(row.until) > Date.now()),
   };
 }
 
@@ -969,6 +1021,9 @@ function getStore(): StoreFile {
   }
   if (!Array.isArray(cache.removedInviteIds)) {
     cache.removedInviteIds = [];
+  }
+  if (!Array.isArray(cache.checkinCooldowns)) {
+    cache.checkinCooldowns = [];
   }
   return cache;
 }
@@ -1422,6 +1477,8 @@ export function addInvite(input: {
   teamName: string;
   fortniteNick: string;
   ignoreCooldown?: boolean;
+  roleColor?: string;
+  roleName?: string;
 }): Invite {
   const store = getStore();
   const scrim = store.scrims.find((item) => item.id === input.scrimId);
@@ -1490,6 +1547,9 @@ export function addInvite(input: {
     fortniteNick,
     droppedAt: null,
     dropName: null,
+    dropDeadlineAt: new Date(Date.now() + DROP_MARK_MS).toISOString(),
+    roleColor: String(input.roleColor ?? ""),
+    roleName: String(input.roleName ?? ""),
   };
   store.invites.push(invite);
   persist();
@@ -1544,7 +1604,11 @@ export function removeInvite(scrimId: string, inviteId: string): boolean {
   return true;
 }
 
-export function removePlayer(scrimId: string, discordUserId: string): Invite | null {
+export function removePlayer(
+  scrimId: string,
+  discordUserId: string,
+  cooldownMs = CHECKIN_COOLDOWN_MS,
+): Invite | null {
   const store = getStore();
   const invite = store.invites.find(
     (item) => item.scrimId === scrimId && item.discordUserId === discordUserId,
@@ -1555,7 +1619,7 @@ export function removePlayer(scrimId: string, discordUserId: string): Invite | n
   rememberRemovedInvites([invite.id]);
   clearPlayerDrop(scrimId, discordUserId, invite.teamName);
   store.invites = store.invites.filter((item) => item.id !== invite.id);
-  setCheckinCooldown(discordUserId);
+  setCheckinCooldown(discordUserId, cooldownMs);
   persist();
   addLog({
     scrimId,
@@ -1580,6 +1644,7 @@ export function markDropped(
   }
   invite.dropped = true;
   invite.droppedAt = invite.droppedAt ?? new Date().toISOString();
+  invite.dropDeadlineAt = null;
   if (dropName) {
     invite.dropName = dropName;
   }
@@ -1616,7 +1681,7 @@ export function claimDrop(
   scrimId: string,
   dropId: string,
   teamName: string,
-  claimant: { userId: string; displayName: string; avatarUrl: string } | null,
+  claimant: { userId: string; displayName: string; avatarUrl: string; roleColor?: string } | null,
 ): DropSpot {
   const store = getStore();
   const scrim = store.scrims.find((item) => item.id === scrimId);
@@ -1639,6 +1704,7 @@ export function claimDrop(
     userId: claimant?.userId ?? "",
     displayName: claimant?.displayName ?? teamName,
     avatarUrl: claimant?.avatarUrl ?? "",
+    roleColor: claimant?.roleColor ?? "",
   };
   const nextById = new Map(
     scrim.drops.map((item) => [
@@ -1683,6 +1749,53 @@ export function claimDrop(
     detail: `Time ${teamName} · drop ${drop.name} · ${listDropClaims(drop).length}/${limit} times`,
   });
   return drop;
+}
+
+export function expireUnmarkedCheckins(): Invite[] {
+  const store = getStore();
+  const now = Date.now();
+  const due = store.invites.filter(
+    (invite) =>
+      !invite.dropped &&
+      invite.dropDeadlineAt &&
+      Date.parse(invite.dropDeadlineAt) > 0 &&
+      Date.parse(invite.dropDeadlineAt) <= now,
+  );
+  const removed: Invite[] = [];
+  for (const invite of due) {
+    const gone = removePlayer(invite.scrimId, invite.discordUserId, DROP_TIMEOUT_COOLDOWN_MS);
+    if (gone) {
+      removed.push(gone);
+    }
+  }
+  return removed;
+}
+
+export function patchInviteRole(
+  scrimId: string,
+  discordUserId: string,
+  role: { color: string; name: string },
+): void {
+  const invite = getStore().invites.find(
+    (item) => item.scrimId === scrimId && item.discordUserId === discordUserId,
+  );
+  if (!invite) {
+    return;
+  }
+  invite.roleColor = role.color;
+  invite.roleName = role.name;
+  persist();
+}
+
+export function deleteTablesForScrim(scrimId: string): number {
+  const store = getStore();
+  const before = store.tables.length;
+  store.tables = store.tables.filter((table) => table.scrimId !== scrimId);
+  const removed = before - store.tables.length;
+  if (removed > 0) {
+    persist();
+  }
+  return removed;
 }
 
 export function getActiveBan(discordUserId: string): BlacklistEntry | null {

@@ -572,6 +572,21 @@ code {
   font-size: 13px;
 }
 
+.table-manage-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.table-manage-row > button:first-child {
+  flex: 1;
+}
+
+.table-manage-row .btn.danger {
+  align-self: center;
+  flex-shrink: 0;
+}
+
 .blacklist-list {
   list-style: none;
   margin: 0;
@@ -827,24 +842,17 @@ code {
 }
 
 .drop-poly {
-  fill: rgba(209, 0, 209, 0.1);
-  stroke: rgba(96, 165, 250, 0.85);
-  stroke-width: 0.28;
+  fill: rgba(18, 14, 20, 0.16);
+  stroke: #1a1418;
+  stroke-width: 0.72;
+  stroke-linejoin: round;
   transition: fill 0.25s var(--ease), stroke 0.25s var(--ease), opacity 0.25s var(--ease);
 }
 
 .drop-poly.idle {
-  animation: poi-breathe 2.4s ease-in-out infinite;
-}
-
-@keyframes poi-breathe {
-  0%,
-  100% {
-    fill: rgba(209, 0, 209, 0.2);
-  }
-  50% {
-    fill: rgba(209, 0, 209, 0.42);
-  }
+  fill: rgba(22, 18, 24, 0.2);
+  stroke: #121014;
+  stroke-width: 0.78;
 }
 
 .drop-poly-hit {
@@ -866,14 +874,15 @@ code {
 
 .drop-poly.taken,
 .drop-poly.full {
-  fill: rgba(255, 28, 28, 0.22);
-  stroke: #ff1a1a;
-  stroke-width: 0.55;
+  fill: var(--drop-fill, rgba(28, 22, 30, 0.38));
+  stroke: #0e0c0f;
+  stroke-width: 0.82;
 }
 
 .drop-poly.mine {
-  fill: rgba(255, 36, 36, 0.42);
-  stroke: #ff4d4d;
+  fill: var(--drop-fill, rgba(28, 22, 30, 0.5));
+  stroke: #0a090b;
+  stroke-width: 0.9;
 }
 
 .map-board.play {
@@ -892,10 +901,9 @@ code {
   stroke: #fff;
 }
 
-.drop-hit.mine,
-.drop-poly.mine {
-  fill: rgba(255, 36, 36, 0.42);
-  stroke: #ff4d4d;
+.drop-hit.mine {
+  fill: rgba(18, 14, 20, 0.45);
+  stroke: #121014;
 }
 
 .drop-hit.hot {
@@ -965,12 +973,11 @@ code {
   position: absolute;
   z-index: 4;
   display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: flex-start;
-  gap: 0 8px;
-  transform: translate(-50%, -50%) scale(calc(1 / var(--map-zoom, 1)));
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: 22%;
+  transform: translate(-50%, -42%) scale(calc(var(--marker-scale, 1) / var(--map-zoom, 1)));
   transform-origin: center center;
   pointer-events: none;
 }
@@ -980,30 +987,33 @@ code {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  margin: 0 -2px;
+  max-width: 100%;
 }
 
 .drop-marker-face {
-  width: 42px;
-  height: 42px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   object-fit: cover;
-  border: 2.5px solid #ff1a1a;
-  box-shadow: 0 0 0 1px #3a0000, 0 2px 8px rgba(0, 0, 0, 0.55);
+  border: 2px solid var(--claim-role, #1a1418);
+  box-shadow: 0 0 0 1px #0a090b, 0 2px 6px rgba(0, 0, 0, 0.55);
   background: #111;
 }
 
 .drop-marker-name {
   color: #fff;
   font-family: "Barlow Condensed", Impact, sans-serif;
-  font-size: 16px;
+  font-size: 11px;
   font-weight: 800;
-  line-height: 0.95;
+  line-height: 1;
   text-align: center;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
+  max-width: 9.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  -webkit-text-stroke: 3.5px #000;
+  -webkit-text-stroke: 2.4px #0a090b;
   paint-order: stroke fill;
 }
 

@@ -196,19 +196,28 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
     }
   }
 
-  async function onDelete() {
-    if (!editingId || !window.confirm("Apagar esta tabela pública?")) {
+  async function onDeleteTable(id: string, name: string) {
+    if (!window.confirm(`Apagar a tabela “${name}” do site?`)) {
       return;
     }
     setError(null);
     try {
-      await api(`/api/tables/${editingId}`, { method: "DELETE" });
-      resetForm();
+      await api(`/api/tables/${id}`, { method: "DELETE" });
+      if (editingId === id) {
+        resetForm();
+      }
       setNotice("Tabela apagada.");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível apagar");
     }
+  }
+
+  async function onDelete() {
+    if (!editingId) {
+      return;
+    }
+    await onDeleteTable(editingId, name || "esta tabela");
   }
 
   function updateRow(id: string, patch: Partial<DraftRow>) {
@@ -488,7 +497,7 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
           ) : (
             <ul className="scrim-list">
               {tables.map((table) => (
-                <li key={table.id}>
+                <li key={table.id} className="table-manage-row">
                   <button type="button" onClick={() => fill(table)}>
                     <strong>{table.name}</strong>
                     <span>
@@ -497,6 +506,13 @@ export function StaffTables({ onBack }: { onBack: () => void }) {
                       {MODE_LABEL[table.mode]}
                       {table.kind === "manual" ? ` · ${table.rows.length} linhas` : ""}
                     </span>
+                  </button>
+                  <button
+                    className="btn danger"
+                    type="button"
+                    onClick={() => void onDeleteTable(table.id, table.name)}
+                  >
+                    Remover
                   </button>
                 </li>
               ))}

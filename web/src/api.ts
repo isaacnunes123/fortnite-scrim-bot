@@ -115,6 +115,7 @@ export type DropClaim = {
   userId: string;
   displayName: string;
   avatarUrl: string;
+  roleColor?: string;
 };
 
 export type DropSpot = {

@@ -14,6 +14,7 @@ export type DiscordRoleInfo = {
   id: string;
   name: string;
   color: string;
+  position: number;
 };
 
 export class DiscordRestError extends Error {
@@ -230,6 +231,16 @@ export async function fetchGuildRoles(): Promise<DiscordRoleInfo[]> {
     })
     .filter((role): role is NonNullable<typeof role> => Boolean(role))
     .filter((role) => role.id !== env.discordGuildId && !role.managed)
-    .sort((a, b) => b.position - a.position)
-    .map(({ id, name, color }) => ({ id, name, color }));
+    .sort((a, b) => b.position - a.position);
+}
+
+export function highestMemberRole(
+  roleIds: string[],
+  roles: DiscordRoleInfo[],
+): { name: string; color: string } | null {
+  const owned = new Set(roleIds);
+  const ranked = roles.filter((role) => owned.has(role.id));
+  const colored = ranked.find((role) => role.color && role.color !== "#000000");
+  const pick = colored ?? ranked[0];
+  return pick ? { name: pick.name, color: pick.color === "#000000" ? "#1f2937" : pick.color } : null;
 }

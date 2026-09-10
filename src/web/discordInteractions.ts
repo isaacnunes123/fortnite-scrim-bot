@@ -14,6 +14,7 @@ import {
   getActiveBan,
   getScrim,
   listInvites,
+  patchInviteRole,
   patchScrim,
   pullRemoteStore,
   remainingCheckinCooldown,
@@ -22,7 +23,8 @@ import {
   type Scrim,
 } from "../scrims/store.js";
 import { isLeavePunishable } from "../scrims/time.js";
-import { discordRequest, fetchGuildMember } from "./discordRest.js";
+import { closeRegistrationIfFull, handleAdminButton, processExpiredDropDeadlines } from "./adminLobby.js";
+import { discordRequest, fetchGuildMember, fetchGuildRoles, highestMemberRole } from "./discordRest.js";
 
 const PING = 1;
 const MESSAGE_COMPONENT = 3;
@@ -218,6 +220,17 @@ async function applyRegisterSideEffects(scrim: Scrim, userId: string): Promise<v
   const updated = getScrim(live.id) ?? live;
   if (teamCount(updated.id) >= updated.maxSlots) {
     await revealFillRest(updated).catch(() => undefined);
+    await closeRegistrationIfFull(updated).catch(() => undefined);
+  }
+  try {
+    const member = await fetchGuildMember(userId, live.guildId || env.discordGuildId);
+    const roles = await fetchGuildRoles();
+    const highest = member ? highestMemberRole(member.roles, roles) : null;
+    if (highest) {
+      patchInviteRole(live.id, userId, highest);
+    }
+  } catch {
+    /* cargo é opcional no check-in */
   }
 }
 
@@ -474,6 +487,27 @@ async function dispatchButton(
   if (action === "fillno" && extra) {
     return handleFillDecision(scrimId, guildId, channelId, extra, false);
   }
+  if (
+    action === "nagdrop" ||
+    action === "nagcode" ||
+    action === "lockchat" ||
+    action === "finish" ||
+    action === "finishyes" ||
+    action === "finishno" ||
+    action === "kill" ||
+    action === "killyes" ||
+    action === "killno"
+  ) {
+    const scrim = resolveScrimFromButton(scrimId, guildId, channelId);
+    if (!scrim) {
+      return ephemeral("Scrim indisponível.");
+    }
+    const result = await handleAdminButton(action, scrim, member);
+    if (result.extra?.components) {
+      return ephemeral(result.content, { components: result.extra.components as never });
+    }
+    return ephemeral(result.content);
+  }
   return ephemeral("Ação desconhecida.");
 }
 
@@ -503,6 +537,7 @@ export async function handleDiscordHttpInteraction(
   }
 
   await pullRemoteStore();
+  await processExpiredDropDeadlines().catch(() => undefined);
 
   if (type === MESSAGE_COMPONENT) {
     const data = asRecord(parsed.data);

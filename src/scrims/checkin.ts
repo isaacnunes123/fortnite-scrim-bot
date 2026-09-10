@@ -119,9 +119,11 @@ function successMessage(scrim: Scrim, displayName: string): string {
     `Check-in feito na **${scrim.name}**.`,
     `Nick (Fortnite / apelido): **${displayName}**`,
     "",
-    `Agora você vê ${chatMention} e ${dropmapMention}.`,
-    "Abra o **mesmo link** da embed do dropmap, entre com este Discord e **marque o drop**.",
-    "Canais de **código** e **getting-off** só liberam depois do drop no mapa.",
+    "**Você tem 3 minutos** para abrir o mapa, marcar o drop e confirmar.",
+    "Se não marcar nesse tempo, o check-in é **desfeito**. Só pode registrar de novo **3 minutos depois** desse timeout.",
+    `Mapa: ${dropmapMention}`,
+    `Chat: ${chatMention}.`,
+    "Código e getting-off só depois de marcar o drop.",
   ].join("\n");
 }
 
@@ -141,9 +143,10 @@ export function registerPlayer(scrim: Scrim | null, member: CheckinMember | null
   }
   const wait = remainingCheckinCooldown(member.id);
   if (wait > 0) {
+    const label = wait >= 60 ? `${Math.ceil(wait / 60)} min` : `${wait}s`;
     return {
       ok: false,
-      content: `Você saiu há pouco. Espere **${wait}s** para fazer check-in de novo (evita saída sem querer).`,
+      content: `Espere **${label}** para fazer check-in de novo.`,
     };
   }
   const already = listInvites(scrim.id).find((invite) => invite.discordUserId === member.id);

@@ -75,6 +75,8 @@ async function resolveButtonScrim(
 export async function handleInteraction(interaction: Interaction, client: Client) {
   if (interaction.isButton()) {
     await pullRemoteStore().catch(() => undefined);
+    const { processExpiredDropDeadlines } = await import("../web/adminLobby.js");
+    await processExpiredDropDeadlines().catch(() => undefined);
     const [action, scrimId, extra] = interaction.customId.split(":");
     if (!scrimId) {
       return;
@@ -105,6 +107,38 @@ export async function handleInteraction(interaction: Interaction, client: Client
     }
     if (action === "fillno" && extra) {
       await onFillDecision(interaction, client, scrimId, extra, false);
+      return;
+    }
+    if (
+      action === "nagdrop" ||
+      action === "nagcode" ||
+      action === "lockchat" ||
+      action === "finish" ||
+      action === "finishyes" ||
+      action === "finishno" ||
+      action === "kill" ||
+      action === "killyes" ||
+      action === "killno"
+    ) {
+      const { handleAdminButton } = await import("../web/adminLobby.js");
+      const scrim = await resolveButtonScrim(interaction, scrimId);
+      if (!scrim) {
+        await interaction.reply({ content: "Scrim indisponível.", ephemeral: true });
+        return;
+      }
+      const member = await resolveMember(interaction);
+      const result = await handleAdminButton(
+        action,
+        scrim,
+        member
+          ? { id: member.id, displayName: member.displayName, roleIds: memberRoleIds(member) }
+          : null,
+      );
+      await interaction.reply({
+        content: result.content,
+        ephemeral: true,
+        ...(result.extra?.components ? { components: result.extra.components as never } : {}),
+      });
     }
   }
 }
@@ -145,6 +179,8 @@ async function onRegisterButton(
     const updated = getScrim(outcome.scrim.id);
     if (updated && teamCount(updated.id) >= updated.maxSlots) {
       await revealFillChannel(client, updated);
+      const { closeRegistrationIfFull } = await import("../web/adminLobby.js");
+      await closeRegistrationIfFull(updated).catch(() => undefined);
     }
     await replyOnlyToPlayer(interaction, member!, outcome.content);
   } catch (error) {

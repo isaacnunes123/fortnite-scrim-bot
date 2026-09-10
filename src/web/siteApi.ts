@@ -17,6 +17,7 @@ import {
   deleteTemplate,
   deleteScrim,
   deleteScrimPreset,
+  deleteTablesForScrim,
   findScrimForChannel,
   getScrim,
   getTable,
@@ -64,6 +65,7 @@ import {
 } from "./staffAuth.js";
 import { DiscordRestError, fetchGuildRoles } from "./discordRest.js";
 import { handleDiscordHttpInteraction } from "./discordInteractions.js";
+import { processExpiredDropDeadlines, ensureAdminPanel } from "./adminLobby.js";
 import { readFreshBotHeartbeat } from "../bot/heartbeat.js";
 import { resolveMapAccess } from "./dropAuth.js";
 import { applyPlayerDropViaRest } from "./dropRest.js";
@@ -767,6 +769,7 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
 
   app.get("/api/scrims/:id", requireAuth, async (req, res) => {
     await pullRemoteStore();
+    await processExpiredDropDeadlines().catch(() => undefined);
     const id = String(req.params.id);
     const scrim = ensureScrimHasDrops(id) ?? getScrim(id);
     if (!scrim) {
@@ -776,6 +779,7 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
     if (scrim.provisionStatus === "pending" && !scrim.discord) {
       void kickLobbyProvision(req, scrim.id);
     }
+    void ensureAdminPanel(scrim).catch(() => undefined);
     const invites = listInvites(scrim.id);
     res.json({
       scrim: withLiveMap({
@@ -868,6 +872,7 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
     }
     try {
       await teardownLobbyViaRest(scrim);
+      deleteTablesForScrim(id);
       const removed = deleteScrim(id);
       if (!removed) {
         res.status(404).json({ error: "Scrim não encontrada" });
@@ -1016,6 +1021,7 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
 
   app.get("/api/public/scrims/:id/map", async (req, res) => {
     await pullRemoteStore({ minIntervalMs: 1500 });
+    await processExpiredDropDeadlines().catch(() => undefined);
     const scrim = getScrim(String(req.params.id));
     if (!scrim) {
       res.status(404).json({ error: "Scrim não encontrada", login: false });
@@ -1046,9 +1052,9 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
               "No Discord você já deve ver o canal de código e o getting-off.",
             ]
           : [
+              "Você tem 3 minutos para marcar e confirmar o drop.",
               "Clique no retângulo do drop no mapa.",
-              "Confirme. Se o drop já tiver 1 time, o segundo vira disputa (quando ainda houver disputa livre no mapa).",
-              "Depois o Discord libera código e getting-off.",
+              "Confirme. Depois o Discord libera código e getting-off.",
             ],
     });
   });

@@ -45,6 +45,54 @@ export function polygonPoints(vertices: Vertex[]): string {
   return vertices.map((vertex) => `${vertex.x},${vertex.y}`).join(" ");
 }
 
+export function polygonBox(vertices: Vertex[]): {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  width: number;
+  height: number;
+} {
+  if (vertices.length === 0) {
+    return { minX: 48, minY: 48, maxX: 52, maxY: 52, width: 4, height: 4 };
+  }
+  const xs = vertices.map((vertex) => vertex.x);
+  const ys = vertices.map((vertex) => vertex.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  return { minX, minY, maxX, maxY, width: Math.max(0.8, maxX - minX), height: Math.max(0.8, maxY - minY) };
+}
+
+/** Âncora da foto/nick por dentro do polígono, não no centro solto do pin. */
+export function claimAnchor(vertices: Vertex[], index: number, count: number): Vertex {
+  const box = polygonBox(vertices);
+  const insetX = Math.min(box.width * 0.22, Math.max(0.6, box.width * 0.12));
+  const insetY = Math.min(box.height * 0.28, Math.max(0.7, box.height * 0.16));
+  const left = box.minX + insetX;
+  const right = box.maxX - insetX;
+  const top = box.minY + insetY;
+  const bottom = box.maxY - insetY;
+  const mid = centroidOf(vertices);
+  const cx = Math.min(right, Math.max(left, mid.x));
+  const cy = Math.min(bottom - box.height * 0.08, Math.max(top + box.height * 0.06, mid.y));
+  if (count <= 1) {
+    return { x: cx, y: cy };
+  }
+  const span = Math.max(0.4, right - left);
+  const t = index / Math.max(1, count - 1);
+  return {
+    x: left + span * t,
+    y: cy,
+  };
+}
+
+export function markerScale(vertices: Vertex[]): number {
+  const box = polygonBox(vertices);
+  return Math.min(1, Math.max(0.42, Math.min(box.width / 9, box.height / 8)));
+}
+
 export function clickPercent(
   event: { clientX: number; clientY: number },
   box: DOMRect,

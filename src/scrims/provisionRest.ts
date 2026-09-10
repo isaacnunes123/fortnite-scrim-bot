@@ -451,7 +451,7 @@ export async function provisionLobbyViaRest(scrim: Scrim): Promise<Scrim> {
     ]);
     await Promise.all([
       createMessage(fillId, fillMessagePayload(saved)),
-      createMessage(adminId, adminMessagePayload()),
+      createMessage(adminId, adminMessagePayload(live.id)),
     ]);
 
     const ready = patchScrim(live.id, {
@@ -460,6 +460,7 @@ export async function provisionLobbyViaRest(scrim: Scrim): Promise<Scrim> {
         registrationMessageId: registerMsgId,
         leaveMessageId: leaveMsgId,
         dropMapMessageId: dropMsgId,
+        adminPanelAt: new Date().toISOString(),
       },
       provisionStatus: "ready",
       provisionError: null,
@@ -500,4 +501,31 @@ export async function provisionLobbyViaRest(scrim: Scrim): Promise<Scrim> {
   } finally {
     provisioningIds.delete(scrim.id);
   }
+}
+
+export async function lockLobbyChatViaRest(scrim: Scrim, locked: boolean): Promise<void> {
+  if (!scrim.discord?.chatId) {
+    return;
+  }
+  const ctx = await fetchDiscordGuildContext();
+  const staff = scrim.staffRoleIds.map((roleId) => roleView(roleId, true));
+  const result = await discordRequest("PATCH", `/channels/${scrim.discord.chatId}`, {
+    permission_overwrites: [
+      everyoneDeny(ctx.guildId),
+      botAllow(ctx.botId),
+      roleView(scrim.discord.registeredRoleId, !locked),
+      ...staff,
+    ],
+  });
+  if (!result.ok && result.status !== 404) {
+    throwDiscord(result, "Não foi possível alterar o lock do chat");
+  }
+}
+
+export async function deleteRegistrationChannelViaRest(scrim: Scrim): Promise<void> {
+  const channelId = scrim.discord?.registrationId;
+  if (!channelId || !/^\d{17,20}$/.test(channelId)) {
+    return;
+  }
+  await discordRequest("DELETE", `/channels/${channelId}`).catch(() => undefined);
 }

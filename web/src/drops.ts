@@ -11,6 +11,7 @@ export function listDropClaims(drop: DropSpot): DropClaim[] {
         userId: drop.claimedByUserId ?? "",
         displayName: drop.claimedByName ?? drop.claimedByTeam,
         avatarUrl: drop.claimedByAvatarUrl ?? "",
+        roleColor: "",
       },
     ];
   }
