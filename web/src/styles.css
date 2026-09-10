@@ -585,6 +585,7 @@ code {
 .table-manage-row .btn.danger {
   align-self: center;
   flex-shrink: 0;
+  width: auto;
 }
 
 .blacklist-list {
@@ -1622,6 +1623,10 @@ code {
   max-width: 1120px;
 }
 
+.boards-shell.boards-shell-closed {
+  max-width: min(1520px, 100%);
+}
+
 .home-page.shell,
 .home-shell.shell,
 .boards-shell.shell {
@@ -1972,6 +1977,62 @@ code {
   text-align: right;
 }
 
+.boards-closed-stage {
+  display: grid;
+  gap: 16px;
+}
+
+.boards-detail-closed .boards-closed-maprow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 280px);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.boards-detail-closed .boards-map-card,
+.boards-detail-closed .boards-drop-card {
+  min-width: 0;
+  min-height: 0;
+}
+
+.boards-detail-closed .boards-drop-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.boards-detail-closed .boards-drop-card h3 {
+  margin: 0 0 8px;
+}
+
+.boards-detail-closed .boards-drop-list {
+  flex: 1;
+  margin: 0;
+  max-height: min(78vh, 920px);
+  min-height: 0;
+  overflow: auto;
+}
+
+.boards-detail-closed .map-viewport {
+  aspect-ratio: unset !important;
+  height: min(78vh, 920px);
+  min-height: 420px;
+}
+
+.boards-detail-closed .map-viewport .map-stage,
+.boards-detail-closed .map-board {
+  height: 100%;
+}
+
+.boards-detail-closed .map-board > canvas.map-art {
+  height: 100%;
+  min-height: 0;
+  object-fit: fill;
+}
+
+.boards-detail-closed .boards-table-card {
+  width: 100%;
+}
+
 @media (max-width: 900px) {
   .boards-tabs {
     display: flex;
@@ -1998,6 +2059,19 @@ code {
 
   .boards-split.no-map .boards-table-card {
     display: block;
+  }
+
+  .boards-detail-closed .boards-closed-maprow {
+    grid-template-columns: 1fr;
+  }
+
+  .boards-detail-closed .map-viewport {
+    height: min(70vh, 720px);
+    min-height: 280px;
+  }
+
+  .boards-detail-closed .boards-drop-list {
+    max-height: min(50vh, 420px);
   }
 }
 

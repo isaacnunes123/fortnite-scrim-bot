@@ -120,7 +120,7 @@ export function PublicBoards() {
   );
 
   return (
-    <div className="shell boards-shell">
+    <div className={`shell boards-shell${boardId && detailClosed ? " boards-shell-closed" : ""}`}>
       <SiteHeader brand={brand} current={brand === "closed" ? "closed" : "tabelas"} />
       {boardId ? (
         <BoardDetail id={boardId} onClosedBrand={setDetailClosed} />
@@ -390,9 +390,80 @@ function BoardDetail({
   const yuniteTitle = board.yunite.title?.trim();
   const isManual = board.source === "manual";
   const showMap = Boolean(board.hasMap);
+  const isClosed = normalizeTableCategory(board.category) === "closed";
+
+  const tableCard = (
+    <div className="card boards-table-card">
+      <div className="boards-table-head">
+        <h2>Colocação</h2>
+        {!isManual && matches.length > 0 ? (
+          <select
+            value={sessionId}
+            onChange={(event) => {
+              const next = event.target.value;
+              setSessionId(next);
+              load(next).catch((err) => {
+                setError(err instanceof Error ? err.message : "Falha ao carregar partida");
+              });
+            }}
+          >
+            <option value="">Geral</option>
+            {matches.map((match) => (
+              <option key={match.id} value={match.id}>
+                {match.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
+      </div>
+      {board.yunite.error ? <p className="muted">{board.yunite.error}</p> : null}
+      {!board.yunite.error && rows.length === 0 ? (
+        <p className="muted">
+          {isManual
+            ? "A staff ainda não adicionou linhas nesta tabela."
+            : "A tabela ainda não tem linhas. Assim que o Yunite pontuar, aparece aqui."}
+        </p>
+      ) : rows.length > 0 ? (
+        <div className="boards-table-wrap">
+          <table className="boards-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Players</th>
+                <th>Partidas</th>
+                <th>Elims</th>
+                <th>W</th>
+                <th>Pontos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => (
+                <LeaderboardRowView
+                  key={`${row.rank}-${row.players.join(",")}`}
+                  row={row}
+                  delay={Math.min(index, 14) * 35}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const dropList = (
+    <ul className="boards-drop-list">
+      {board.drops
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+        .map((drop) => (
+          <DropLine key={drop.id} drop={drop} />
+        ))}
+    </ul>
+  );
 
   return (
-    <section className="boards-detail">
+    <section className={`boards-detail ${isClosed && showMap ? "boards-detail-closed" : ""}`}>
       <div className="boards-detail-head">
         <button className="btn secondary" type="button" onClick={() => go(lastListPath)}>
           Voltar
@@ -414,110 +485,76 @@ function BoardDetail({
         </span>
       </div>
 
-      {showMap ? (
-        <div className="boards-tabs">
-          <button
-            type="button"
-            className={`boards-chip ${tab === "table" ? "on" : ""}`}
-            onClick={() => setTab("table")}
-          >
-            Tabela
-          </button>
-          <button
-            type="button"
-            className={`boards-chip ${tab === "map" ? "on" : ""}`}
-            onClick={() => setTab("map")}
-          >
-            Mapa de drop
-          </button>
-        </div>
-      ) : null}
-
-      <div className={`boards-split ${tab} ${showMap ? "" : "no-map"}`} key={tab}>
-        <div className="card boards-table-card">
-          <div className="boards-table-head">
-            <h2>Colocação</h2>
-            {!isManual && matches.length > 0 ? (
-              <select
-                value={sessionId}
-                onChange={(event) => {
-                  const next = event.target.value;
-                  setSessionId(next);
-                  load(next).catch((err) => {
-                    setError(err instanceof Error ? err.message : "Falha ao carregar partida");
-                  });
-                }}
-              >
-                <option value="">Geral</option>
-                {matches.map((match) => (
-                  <option key={match.id} value={match.id}>
-                    {match.name}
-                  </option>
-                ))}
-              </select>
-            ) : null}
+      {isClosed && showMap ? (
+        <div className="boards-closed-stage">
+          <div className="boards-closed-maprow">
+            <div className="card boards-map-card">
+              <div className="boards-table-head">
+                <h2>Mapa de drop</h2>
+                <span className="muted">
+                  {board.claimedDrops}/{board.dropCount} marcados
+                </span>
+              </div>
+              <p className="muted">Somente leitura. Players marcam no link do Discord.</p>
+              <MapBoard
+                imageUrl={board.mapImageUrl || "/maps/island.png"}
+                drops={board.drops}
+                occupancyLimit={board.teamsPerDrop}
+                maxContestedDrops={board.maxContestedDrops}
+              />
+            </div>
+            <aside className="card boards-drop-card">
+              <h3>Drops</h3>
+              {dropList}
+            </aside>
           </div>
-          {board.yunite.error ? <p className="muted">{board.yunite.error}</p> : null}
-          {!board.yunite.error && rows.length === 0 ? (
-            <p className="muted">
-              {isManual
-                ? "A staff ainda não adicionou linhas nesta tabela."
-                : "A tabela ainda não tem linhas. Assim que o Yunite pontuar, aparece aqui."}
-            </p>
-          ) : rows.length > 0 ? (
-            <div className="boards-table-wrap">
-              <table className="boards-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Players</th>
-                    <th>Partidas</th>
-                    <th>Elims</th>
-                    <th>W</th>
-                    <th>Pontos</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, index) => (
-                    <LeaderboardRowView
-                      key={`${row.rank}-${row.players.join(",")}`}
-                      row={row}
-                      delay={Math.min(index, 14) * 35}
-                    />
-                  ))}
-                </tbody>
-              </table>
+          {tableCard}
+        </div>
+      ) : (
+        <>
+          {showMap ? (
+            <div className="boards-tabs">
+              <button
+                type="button"
+                className={`boards-chip ${tab === "table" ? "on" : ""}`}
+                onClick={() => setTab("table")}
+              >
+                Tabela
+              </button>
+              <button
+                type="button"
+                className={`boards-chip ${tab === "map" ? "on" : ""}`}
+                onClick={() => setTab("map")}
+              >
+                Mapa de drop
+              </button>
             </div>
           ) : null}
-        </div>
 
-        {showMap ? (
-        <div className="card boards-map-card">
-          <div className="boards-table-head">
-            <h2>Mapa de drop</h2>
-            <span className="muted">
-              {board.claimedDrops}/{board.dropCount} marcados
-            </span>
+          <div className={`boards-split ${tab} ${showMap ? "" : "no-map"}`} key={tab}>
+            {tableCard}
+            {showMap ? (
+              <div className="card boards-map-card">
+                <div className="boards-table-head">
+                  <h2>Mapa de drop</h2>
+                  <span className="muted">
+                    {board.claimedDrops}/{board.dropCount} marcados
+                  </span>
+                </div>
+                <p className="muted">Somente leitura. Players marcam no link do Discord.</p>
+                <MapBoard
+                  imageUrl={board.mapImageUrl || "/maps/island.png"}
+                  drops={board.drops}
+                  occupancyLimit={board.teamsPerDrop}
+                  maxContestedDrops={board.maxContestedDrops}
+                  compact
+                />
+                {dropList}
+              </div>
+            ) : null}
           </div>
-          <p className="muted">Somente leitura. Players marcam no link do Discord.</p>
-          <MapBoard
-            imageUrl={board.mapImageUrl || "/maps/island.png"}
-            drops={board.drops}
-            occupancyLimit={board.teamsPerDrop}
-            maxContestedDrops={board.maxContestedDrops}
-            compact
-          />
-          <ul className="boards-drop-list">
-            {board.drops
-              .slice()
-              .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
-              .map((drop) => (
-                <DropLine key={drop.id} drop={drop} />
-              ))}
-          </ul>
-        </div>
-        ) : null}
-      </div>
+        </>
+      )}
     </section>
   );
 }

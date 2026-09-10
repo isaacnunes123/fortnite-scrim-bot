@@ -295,6 +295,7 @@ function Home({
   ]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [logFull, setLogFull] = useState(false);
 
@@ -306,6 +307,22 @@ function Home({
     }));
     setBlacklist(banned.blacklist ?? []);
     await onCreated().catch(() => undefined);
+  }
+
+  async function onDeleteScrim(scrim: ScrimSummary) {
+    if (!window.confirm(`Apagar a scrim “${scrim.name}” e todos os convites?`)) {
+      return;
+    }
+    setError(null);
+    setDeletingId(scrim.id);
+    try {
+      await api(`/api/scrims/${scrim.id}`, { method: "DELETE" });
+      await onCreated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível apagar a scrim");
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   async function removeBan(id: string) {
@@ -745,13 +762,21 @@ function Home({
           ) : (
             <ul className="scrim-list">
               {scrims.map((scrim) => (
-                <li key={scrim.id}>
+                <li key={scrim.id} className="table-manage-row">
                   <button type="button" onClick={() => onOpen(scrim.id)}>
                     <strong>{scrim.name}</strong>
                     <span>
                       {scrim.mode} · {scrim.guildName ? `${scrim.guildName} · ` : ""}
                       {scrim.teamCount}/{scrim.maxSlots} times · {scrim.inviteCount} players
                     </span>
+                  </button>
+                  <button
+                    className="btn danger"
+                    type="button"
+                    disabled={deletingId === scrim.id}
+                    onClick={() => void onDeleteScrim(scrim)}
+                  >
+                    {deletingId === scrim.id ? "Apagando…" : "Remover"}
                   </button>
                 </li>
               ))}
