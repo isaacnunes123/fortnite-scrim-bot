@@ -846,7 +846,7 @@ code {
 .drop-poly {
   fill: rgba(18, 14, 20, 0.16);
   stroke: #1a1418;
-  stroke-width: 0.72;
+  stroke-width: 0.38;
   stroke-linejoin: round;
   transition: fill 0.25s var(--ease), stroke 0.25s var(--ease), opacity 0.25s var(--ease);
 }
@@ -854,7 +854,7 @@ code {
 .drop-poly.idle {
   fill: rgba(22, 18, 24, 0.2);
   stroke: #121014;
-  stroke-width: 0.78;
+  stroke-width: 0.4;
 }
 
 .drop-poly-hit {
@@ -878,13 +878,13 @@ code {
 .drop-poly.full {
   fill: var(--drop-fill, rgba(28, 22, 30, 0.38));
   stroke: #0e0c0f;
-  stroke-width: 0.82;
+  stroke-width: 0.48;
 }
 
 .drop-poly.mine {
   fill: var(--drop-fill, rgba(28, 22, 30, 0.5));
   stroke: #0a090b;
-  stroke-width: 0.9;
+  stroke-width: 0.5;
 }
 
 .map-board.play {
@@ -930,7 +930,7 @@ code {
 
 .drop-poly.selected {
   stroke: #fff;
-  stroke-width: 0.7;
+  stroke-width: 0.52;
   filter: drop-shadow(0 0 0.8px #fff);
 }
 
