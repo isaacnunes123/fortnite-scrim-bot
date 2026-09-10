@@ -1623,7 +1623,8 @@ code {
   max-width: 1120px;
 }
 
-.boards-shell.boards-shell-closed {
+.boards-shell.boards-shell-closed,
+.boards-shell:has(.boards-detail-closed) {
   max-width: min(1520px, 100%);
 }
 

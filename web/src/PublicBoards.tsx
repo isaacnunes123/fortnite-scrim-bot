@@ -25,7 +25,6 @@ const MODE_LABEL = {
 } as const;
 
 type Filter = "all" | "live" | "done";
-type DetailTab = "table" | "map";
 
 function boardIdFromPath(pathname: string): string | null {
   const parts = pathname.replace(/\/+$/, "").split("/").filter(Boolean);
@@ -340,7 +339,6 @@ function BoardDetail({
 }) {
   const [board, setBoard] = useState<PublicBoardDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<DetailTab>("table");
   const [sessionId, setSessionId] = useState("");
   const sessionRef = useRef("");
   sessionRef.current = sessionId;
@@ -354,7 +352,6 @@ function BoardDetail({
     setBoard(data.board);
     const isClosed =
       normalizeTableCategory(data.board.category) === "closed" ||
-      data.board.kind === "scrim" ||
       lastListPath.includes("div=closed") ||
       lastListPath.includes("/closed");
     onClosedBrand(isClosed);
@@ -394,8 +391,6 @@ function BoardDetail({
   const yuniteTitle = board.yunite.title?.trim();
   const isManual = board.source === "manual";
   const showMap = Boolean(board.hasMap);
-  const isClosed =
-    normalizeTableCategory(board.category) === "closed" || board.kind === "scrim";
 
   const tableCard = (
     <div className="card boards-table-card">
@@ -516,49 +511,7 @@ function BoardDetail({
           {tableCard}
         </div>
       ) : (
-        <>
-          {showMap ? (
-            <div className="boards-tabs">
-              <button
-                type="button"
-                className={`boards-chip ${tab === "table" ? "on" : ""}`}
-                onClick={() => setTab("table")}
-              >
-                Tabela
-              </button>
-              <button
-                type="button"
-                className={`boards-chip ${tab === "map" ? "on" : ""}`}
-                onClick={() => setTab("map")}
-              >
-                Mapa de drop
-              </button>
-            </div>
-          ) : null}
-
-          <div className={`boards-split ${tab} ${showMap ? "" : "no-map"}`} key={tab}>
-            {tableCard}
-            {showMap ? (
-              <div className="card boards-map-card">
-                <div className="boards-table-head">
-                  <h2>Mapa de drop</h2>
-                  <span className="muted">
-                    {board.claimedDrops}/{board.dropCount} marcados
-                  </span>
-                </div>
-                <p className="muted">Somente leitura. Players marcam no link do Discord.</p>
-                <MapBoard
-                  imageUrl={board.mapImageUrl || "/maps/island.png"}
-                  drops={board.drops}
-                  occupancyLimit={board.teamsPerDrop}
-                  maxContestedDrops={board.maxContestedDrops}
-                  compact
-                />
-                {dropList}
-              </div>
-            ) : null}
-          </div>
-        </>
+        tableCard
       )}
     </section>
   );
