@@ -113,6 +113,7 @@ export type Scrim = {
   provisionStatus: ProvisionStatus;
   provisionError: string | null;
   drops: DropSpot[];
+  dropsUpdatedAt: string;
   templateId: string;
   templateName: string;
   dropsOpen: boolean;
@@ -505,6 +506,7 @@ function normalizeScrim(raw: Scrim): Scrim {
     provisionStatus: normalizeProvisionStatus(raw),
     provisionError: raw.provisionError ? String(raw.provisionError) : null,
     drops: (raw.drops ?? []).map(normalizeDrop),
+    dropsUpdatedAt: String(raw.dropsUpdatedAt ?? "").trim(),
     templateId: raw.templateId ?? "",
     templateName: raw.templateName ?? "",
     dropsOpen: raw.dropsOpen !== false,
@@ -773,29 +775,90 @@ function mergeById<T extends { id: string }>(
   return [...map.values()];
 }
 
+function dropClaimCount(scrim: Scrim): number {
+  return scrim.drops.reduce((n, drop) => n + listDropClaims(drop).length, 0);
+}
+
+function dropClock(scrim: Scrim): number {
+  const t = Date.parse(scrim.dropsUpdatedAt || "");
+  return Number.isFinite(t) ? t : 0;
+}
+
+function mergeDropArrays(newer: DropSpot[], older: DropSpot[]): DropSpot[] {
+  if (newer.length === 0) {
+    return cloneDrops(older);
+  }
+  if (older.length === 0) {
+    return cloneDrops(newer);
+  }
+  const result = cloneDrops(newer);
+  const placed = new Set(
+    result.flatMap((drop) => listDropClaims(drop).map((claim) => claim.teamName)),
+  );
+  const olderById = new Map(older.map((drop) => [drop.id, drop]));
+  for (const drop of result) {
+    const previous = olderById.get(drop.id);
+    if (!previous) {
+      continue;
+    }
+    const claims = listDropClaims(drop);
+    for (const claim of listDropClaims(previous)) {
+      if (placed.has(claim.teamName)) {
+        continue;
+      }
+      claims.push(claim);
+      placed.add(claim.teamName);
+    }
+    applyClaims(drop, claims);
+  }
+  return result;
+}
+
 function pickScrim(local: Scrim, remote: Scrim): Scrim {
+  let base: Scrim = local;
   if (remote.discord && !local.discord) {
-    return remote;
+    base = remote;
+  } else if (local.discord && !remote.discord) {
+    base = local;
+  } else if (local.provisionStatus === "failed" && remote.provisionStatus === "pending") {
+    base = local;
+  } else if (remote.provisionStatus === "failed" && local.provisionStatus === "pending") {
+    base = remote;
+  } else if (remote.provisionStatus === "ready" && local.provisionStatus !== "ready") {
+    base = remote;
   }
-  if (local.discord && !remote.discord) {
-    return local;
-  }
-  if (local.provisionStatus === "failed" && remote.provisionStatus === "pending") {
-    return local;
-  }
-  if (remote.provisionStatus === "failed" && local.provisionStatus === "pending") {
-    return remote;
-  }
-  if (remote.provisionStatus === "ready" && local.provisionStatus !== "ready") {
-    return remote;
-  }
-  return local;
+  const localT = dropClock(local);
+  const remoteT = dropClock(remote);
+  const preferLocalDrops =
+    localT > remoteT || (localT === remoteT && dropClaimCount(local) >= dropClaimCount(remote));
+  const newerDrops = preferLocalDrops ? local.drops : remote.drops;
+  const olderDrops = preferLocalDrops ? remote.drops : local.drops;
+  return {
+    ...base,
+    discord: local.discord ?? remote.discord,
+    mapImageUrl: local.mapImageUrl || remote.mapImageUrl,
+    drops: mergeDropArrays(newerDrops, olderDrops),
+    dropsUpdatedAt:
+      localT >= remoteT
+        ? local.dropsUpdatedAt || remote.dropsUpdatedAt
+        : remote.dropsUpdatedAt || local.dropsUpdatedAt,
+  };
 }
 
 function overlayLocalOnRemote(remote: StoreFile, local: StoreFile): StoreFile {
   return {
     scrims: mergeById(local.scrims, remote.scrims, pickScrim).map(normalizeScrim),
-    invites: mergeById(local.invites, remote.invites, (row) => row),
+    invites: mergeById(local.invites, remote.invites, (localInvite, remoteInvite) => {
+      if (remoteInvite.dropped && !localInvite.dropped) {
+        return remoteInvite;
+      }
+      if (localInvite.dropped && !remoteInvite.dropped) {
+        return localInvite;
+      }
+      const localAt = Date.parse(localInvite.droppedAt ?? "") || 0;
+      const remoteAt = Date.parse(remoteInvite.droppedAt ?? "") || 0;
+      return remoteAt > localAt ? remoteInvite : localInvite;
+    }),
     templates: mergeById(local.templates, remote.templates, (left, right) =>
       left.drops.length >= right.drops.length ? left : right,
     ),
@@ -1555,6 +1618,7 @@ export function claimDrop(
     applyClaims(item, nextById.get(item.id) ?? []);
   }
   const now = new Date().toISOString();
+  scrim.dropsUpdatedAt = now;
   for (const invite of store.invites) {
     if (invite.scrimId === scrimId && invite.teamName === teamName) {
       invite.dropped = true;
