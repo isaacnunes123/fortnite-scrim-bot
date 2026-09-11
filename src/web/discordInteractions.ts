@@ -1,5 +1,6 @@
 import { createPublicKey, verify } from "node:crypto";
 import { env } from "../env.js";
+import { ensureSlashCommandsRegistered, executeFillSlashCommand } from "../bot/slashFill.js";
 import { registerPlayer, resolveScrimFromButton, type CheckinMember } from "../scrims/checkin.js";
 import {
   dropMapMessagePayload,
@@ -25,16 +26,15 @@ import {
 import { isLeavePunishable } from "../scrims/time.js";
 import { closeRegistrationIfFull, handleAdminButton, processExpiredDropDeadlines } from "./adminLobby.js";
 import { discordRequest, fetchGuildMember, fetchGuildRoles, highestMemberRole } from "./discordRest.js";
+import { revealFillChannelViaRest } from "./lobbyRest.js";
 
 const PING = 1;
+const APPLICATION_COMMAND = 2;
 const MESSAGE_COMPONENT = 3;
 const PONG = 1;
 const CHANNEL_MESSAGE = 4;
 const UPDATE_MESSAGE = 7;
 const EPHEMERAL = 64;
-
-const VIEW = 1n << 10n;
-const SEND = 1n << 11n;
 
 export type DiscordHttpResult = {
   status: number;
@@ -185,21 +185,9 @@ async function refreshDropMapRest(scrim: Scrim): Promise<void> {
 }
 
 async function revealFillRest(scrim: Scrim): Promise<void> {
+  await revealFillChannelViaRest(scrim);
   const live = getScrim(scrim.id) ?? scrim;
-  if (!live.discord || live.discord.fillVisible) {
-    return;
-  }
-  for (const roleId of live.accessRoleIds) {
-    await discordRequest("PUT", `/channels/${live.discord.fillId}/permissions/${roleId}`, {
-      type: 0,
-      allow: VIEW.toString(),
-      deny: SEND.toString(),
-    });
-  }
-  patchScrim(live.id, {
-    discord: { ...live.discord, fillVisible: true },
-  });
-  if (live.discord.fillId) {
+  if (live.discord?.fillId) {
     await sendChannelMessage(live.discord.fillId, fillMessagePayload(getScrim(live.id) ?? live)).catch(
       () => undefined,
     );
@@ -533,11 +521,47 @@ export async function handleDiscordHttpInteraction(
 
   const type = Number(parsed.type);
   if (type === PING) {
+    void ensureSlashCommandsRegistered().then((result) => {
+      if (result.ok) {
+        console.log(`[discord-interactions] ${result.detail}`);
+      } else {
+        console.warn(`[discord-interactions] ${result.detail}`);
+      }
+    });
     return { status: 200, body: { type: PONG } };
   }
 
   await pullRemoteStore();
   await processExpiredDropDeadlines().catch(() => undefined);
+
+  if (type === APPLICATION_COMMAND) {
+    const data = asRecord(parsed.data);
+    const channel = asRecord(parsed.channel);
+    const commandName = String(data?.name ?? "");
+    const guildId = String(parsed.guild_id ?? env.discordGuildId);
+    const channelId = String(parsed.channel_id ?? channel?.id ?? "");
+    const parentId = typeof channel?.parent_id === "string" ? channel.parent_id : null;
+    const member = parseMember(parsed);
+    let result: DiscordHttpResult;
+    try {
+      const content = await executeFillSlashCommand({
+        commandName,
+        guildId,
+        channelId,
+        parentId,
+        member,
+      });
+      result = ephemeral(content);
+    } catch (error) {
+      result = ephemeral(
+        error instanceof Error ? error.message : "Não foi possível alterar o fill.",
+      );
+    }
+    await flushStore().catch((error) => {
+      console.error("[discord-interactions] flushStore:", error);
+    });
+    return result;
+  }
 
   if (type === MESSAGE_COMPONENT) {
     const data = asRecord(parsed.data);
@@ -552,5 +576,5 @@ export async function handleDiscordHttpInteraction(
     return result;
   }
 
-  return { status: 200, body: { type: PONG } };
+  return ephemeral("Este tipo de interação ainda não é suportado.");
 }

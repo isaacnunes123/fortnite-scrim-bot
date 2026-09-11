@@ -143,6 +143,26 @@ export async function setDropMarkingOpenViaRest(scrim: Scrim, open: boolean): Pr
   return ensureDropMapEmbedViaRest(updated);
 }
 
+const VIEW = 1n << 10n;
+const SEND = 1n << 11n;
+
+export async function revealFillChannelViaRest(scrim: Scrim): Promise<void> {
+  const live = getScrim(scrim.id) ?? scrim;
+  if (!live.discord || live.discord.fillVisible) {
+    return;
+  }
+  for (const roleId of live.accessRoleIds) {
+    await discordRequest("PUT", `/channels/${live.discord.fillId}/permissions/${roleId}`, {
+      type: 0,
+      allow: VIEW.toString(),
+      deny: SEND.toString(),
+    });
+  }
+  patchScrim(live.id, {
+    discord: { ...live.discord, fillVisible: true },
+  });
+}
+
 export async function setFillChatOpenViaRest(scrim: Scrim, open: boolean): Promise<void> {
   if (!scrim.discord) {
     return;

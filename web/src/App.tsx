@@ -471,8 +471,8 @@ function Home({
           {botPresence(status) === "offline" || botPresence(status) === "unknown" ? (
             <p className="muted">
               Criar a categoria no Discord não precisa do Railway. Confira DISCORD_TOKEN na Vercel e
-              as permissões Gerenciar Canais e Gerenciar Cargos no cargo do bot. Check-in ao vivo
-              e slash commands só funcionam quando o gateway estiver no ar.
+              as permissões Gerenciar Canais e Gerenciar Cargos no cargo do bot. Check-in e slash
+              (`/abrirvaga`, `/fecharvaga`) passam pelo Interactions Endpoint da Vercel.
             </p>
           ) : null}
           {botPresence(status) === "online" && status?.note ? <p className="muted">{status.note}</p> : null}

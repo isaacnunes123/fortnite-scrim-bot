@@ -120,11 +120,12 @@ O frontend usa caminhos relativos (`/api/...`, `/tabelas`). A Vercel serve o HTM
    - `https://buildscrims.online/api/auth/discord/callback`
 6. Discord Developer Portal → **General Information** → **Interactions Endpoint URL**:
    - `https://buildscrims.online/api/discord/interactions`
+   - **Deixe essa URL preenchida.** Com ela, o Discord manda **tudo** (PING, botões **e** slash `/abrirvaga` `/fecharvaga`) para a Vercel. Sem ela, o check-in HTTP some e só o gateway no Railway receberia slash.
    - O Discord manda um PING. Só salva se `DISCORD_PUBLIC_KEY` na Vercel for a Public Key certa.
-   - Confira `https://buildscrims.online/api/discord/interactions` — tem que mostrar `"publicKeyConfigured":true`
+   - Confira `https://buildscrims.online/api/discord/interactions` — tem que mostrar `"publicKeyConfigured":true` e `"slashRegistered":true`
 7. Confira `https://buildscrims.online/api/health` — tem que voltar `"service":"fortnite-scrim-bot"` e `"host":"vercel"`.
 
-O botão **Registrar** do check-in vai para essa URL HTTP (Vercel + Neon). **Não depende do Railway/gateway.** Coloque `DISCORD_PUBLIC_KEY` também no Railway para o gateway não responder o mesmo clique.
+O botão **Registrar** e os slash `/abrirvaga` `/fecharvaga` vão para essa URL HTTP (Vercel + Neon). **Não dependem do Railway/gateway.** Coloque `DISCORD_PUBLIC_KEY` também no Railway para o gateway não responder o mesmo clique.
 
 ### Neon (gratuito) para as tabelas
 

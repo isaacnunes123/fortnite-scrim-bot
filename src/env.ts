@@ -17,7 +17,7 @@ export const env = {
     (process.env.PUBLIC_BASE_URL ?? "").startsWith("https://") ||
     (process.env.DISCORD_REDIRECT_URI ?? "").startsWith("https://"),
   yuniteApiKey: process.env.YUNITE_API_KEY?.trim() ?? "",
-  /** Host Node 24/7 do gateway (slash commands). Check-in vai para /api/discord/interactions na Vercel. */
+  /** Host Node 24/7 do gateway (presença / painel). Slash e botões vão para /api/discord/interactions na Vercel. */
   botProcessUrl: (process.env.BOT_PROCESS_URL ?? "").trim().replace(/\/$/, ""),
 };
 
