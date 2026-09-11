@@ -64,7 +64,7 @@ import {
   requireAuth,
 } from "./staffAuth.js";
 import { DiscordRestError, fetchGuildRoles } from "./discordRest.js";
-import { FILL_SLASH_COMMANDS, registerSlashCommandsViaRest } from "../bot/slashFill.js";
+import { FILL_SLASH_COMMANDS, ensureSlashCommandsRegistered } from "../bot/slashFill.js";
 import { handleDiscordHttpInteraction } from "./discordInteractions.js";
 import { processExpiredDropDeadlines, ensureAdminPanel } from "./adminLobby.js";
 import { readFreshBotHeartbeat } from "../bot/heartbeat.js";
@@ -467,17 +467,13 @@ export function setupExpress(app: Express): void {
 }
 
 export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {}): void {
-  void registerSlashCommandsViaRest()
-    .then((result) => {
-      if (result.ok) {
-        console.log(`[web] ${result.detail}`);
-      } else {
-        console.warn(`[web] ${result.detail}`);
-      }
-    })
-    .catch((error) => {
-      console.warn("[web] Falha ao registrar comandos slash:", error);
-    });
+  void ensureSlashCommandsRegistered().then((result) => {
+    if (result.ok) {
+      console.log(`[web] ${result.detail}`);
+    } else {
+      console.warn(`[web] ${result.detail}`);
+    }
+  });
 
   app.get("/api/health", async (_req, res) => {
     const persistence = persistenceMode();
@@ -530,8 +526,14 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
     res.json({ scrim });
   });
 
-  app.get("/api/discord/interactions", async (_req, res) => {
-    const registered = await registerSlashCommandsViaRest();
+  app.get("/api/discord/interactions", (_req, res) => {
+    void ensureSlashCommandsRegistered().then((result) => {
+      if (result.ok) {
+        console.log(`[web] ${result.detail}`);
+      } else {
+        console.warn(`[web] ${result.detail}`);
+      }
+    });
     res.json({
       ok: true,
       service: "discord-interactions",
@@ -540,8 +542,6 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
       publicKeyConfigured: Boolean(env.discordPublicKey),
       handles: ["PING", "APPLICATION_COMMAND", "MESSAGE_COMPONENT"],
       slashCommands: FILL_SLASH_COMMANDS.map((command) => command.name),
-      slashRegistered: registered.ok,
-      slashRegisterDetail: registered.detail,
     });
   });
 
