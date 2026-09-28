@@ -132,17 +132,29 @@ export function App() {
       checking: false,
       authenticated: me.authenticated,
     });
-    if (me.authenticated) {
+    if (!me.authenticated) {
+      return;
+    }
+    try {
       const bot = await api<BotStatus>("/api/bot/status");
       setStatus(bot);
+    } catch {
+      /* status falhou — não fecha o painel */
+    }
+    try {
       const list = await api<{ scrims: ScrimSummary[] }>("/api/scrims");
       setScrims(list.scrims);
+    } catch {
+      /* lista falhou — não fecha o painel */
     }
   }
 
   useEffect(() => {
     refreshSession().catch(() => {
-      setAuth({ checking: false, authenticated: false });
+      setAuth((current) => ({
+        checking: false,
+        authenticated: current.authenticated,
+      }));
     });
   }, []);
 

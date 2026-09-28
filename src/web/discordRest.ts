@@ -50,15 +50,21 @@ export async function discordRequest(
   }
   let last: DiscordApiResult = { ok: false, status: 0, body: null };
   for (let i = 0; i < attempts; i += 1) {
-    const response = await fetch(`${API}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bot ${env.discordToken}`,
-        "Content-Type": "application/json",
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(15_000),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API}${path}`, {
+        method,
+        headers: {
+          Authorization: `Bot ${env.discordToken}`,
+          "Content-Type": "application/json",
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch {
+      last = { ok: false, status: 0, body: null };
+      continue;
+    }
     if (response.status === 429) {
       const retryBody = await response.json().catch(() => null);
       const retryAfter = Number(asRecord(retryBody)?.retry_after ?? 1);
@@ -110,35 +116,65 @@ export async function takeMemberRole(guildId: string, userId: string, roleId: st
   await discordRequest("DELETE", `/guilds/${guildId}/members/${userId}/roles/${roleId}`);
 }
 
+function discordUnreachable(status: number): boolean {
+  return status === 0 || status === 429 || status >= 500;
+}
+
+export async function lookupGuildMember(
+  userId: string,
+  guildId = env.discordGuildId,
+): Promise<{ member: DiscordMemberInfo | null; discordUnreachable: boolean }> {
+  if (!env.discordToken || !guildId || !userId) {
+    return { member: null, discordUnreachable: Boolean(!env.discordToken) };
+  }
+  try {
+    const result = await discordGet(`/guilds/${guildId}/members/${userId}`);
+    if (discordUnreachable(result.status)) {
+      return { member: null, discordUnreachable: true };
+    }
+    if (!result.ok) {
+      return { member: null, discordUnreachable: false };
+    }
+    const record = asRecord(result.body);
+    if (!record) {
+      return { member: null, discordUnreachable: false };
+    }
+    const user = asRecord(record.user);
+    const roles = Array.isArray(record.roles) ? record.roles.map(String) : [];
+    const nick = typeof record.nick === "string" ? record.nick.trim() : "";
+    const globalName = typeof user?.global_name === "string" ? user.global_name.trim() : "";
+    const username = typeof user?.username === "string" ? user.username.trim() : "";
+    const id = String(user?.id ?? userId);
+    const avatar = typeof user?.avatar === "string" ? user.avatar : "";
+    let guildName = "";
+    if (guildId === env.discordGuildId) {
+      try {
+        guildName = await fetchGuildName();
+      } catch {
+        guildName = "";
+      }
+    }
+    return {
+      member: {
+        id,
+        roles,
+        displayName: nick || globalName || username || userId,
+        guildName,
+        avatarUrl: discordAvatarUrl(id, avatar),
+      },
+      discordUnreachable: false,
+    };
+  } catch {
+    return { member: null, discordUnreachable: true };
+  }
+}
+
 export async function fetchGuildMember(
   userId: string,
   guildId = env.discordGuildId,
 ): Promise<DiscordMemberInfo | null> {
-  if (!env.discordToken || !guildId || !userId) {
-    return null;
-  }
-  const result = await discordGet(`/guilds/${guildId}/members/${userId}`);
-  if (!result.ok) {
-    return null;
-  }
-  const record = asRecord(result.body);
-  if (!record) {
-    return null;
-  }
-  const user = asRecord(record.user);
-  const roles = Array.isArray(record.roles) ? record.roles.map(String) : [];
-  const nick = typeof record.nick === "string" ? record.nick.trim() : "";
-  const globalName = typeof user?.global_name === "string" ? user.global_name.trim() : "";
-  const username = typeof user?.username === "string" ? user.username.trim() : "";
-  const id = String(user?.id ?? userId);
-  const avatar = typeof user?.avatar === "string" ? user.avatar : "";
-  return {
-    id,
-    roles,
-    displayName: nick || globalName || username || userId,
-    guildName: guildId === env.discordGuildId ? await fetchGuildName() : "",
-    avatarUrl: discordAvatarUrl(id, avatar),
-  };
+  const lookup = await lookupGuildMember(userId, guildId);
+  return lookup.member;
 }
 
 function roleHexColor(color: unknown): string {

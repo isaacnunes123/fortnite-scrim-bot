@@ -36,15 +36,20 @@ export function pulseBotHeartbeat(status: HeartbeatStatus): void {
 }
 
 export async function readFreshBotHeartbeat(): Promise<HeartbeatStatus | null> {
-  const row = await loadBotHeartbeat();
-  if (!row) {
+  try {
+    const row = await loadBotHeartbeat();
+    if (!row) {
+      return null;
+    }
+    const age = Date.now() - Date.parse(row.updatedAt);
+    if (!Number.isFinite(age) || age > STALE_MS) {
+      return null;
+    }
+    return asBotStatus(row.payload);
+  } catch (error) {
+    console.error("[bot] heartbeat read:", error);
     return null;
   }
-  const age = Date.now() - Date.parse(row.updatedAt);
-  if (!Number.isFinite(age) || age > STALE_MS) {
-    return null;
-  }
-  return asBotStatus(row.payload);
 }
 
 function asBotStatus(value: unknown): HeartbeatStatus | null {

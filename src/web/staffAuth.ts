@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import { cookieOptions, clearCookieOptions, env } from "../env.js";
 import { discordRedirectUri } from "../scrims/links.js";
 import { getScrim } from "../scrims/store.js";
-import { fetchGuildMember } from "./discordRest.js";
+import { fetchGuildMember, lookupGuildMember } from "./discordRest.js";
 
 export const COOKIE_NAME = "scrim_session";
 const OAUTH_COOKIE = "drop_oauth";
@@ -157,7 +157,20 @@ export async function isStaffSession(req: Request): Promise<boolean> {
   if (!token.startsWith("discord:")) {
     return false;
   }
-  return memberHasAdminRole(token.slice("discord:".length));
+  const userId = token.slice("discord:".length);
+  try {
+    const lookup = await lookupGuildMember(userId);
+    const member = lookup.member;
+    if (member) {
+      return env.adminRoleIds.some((id) => member.roles.includes(id));
+    }
+    if (lookup.discordUnreachable) {
+      return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 /** Vercel → Railway kick to create Discord channels without waiting on the hobby 10s limit. */
@@ -176,9 +189,17 @@ export function isBotInternalRequest(req: Request): boolean {
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (!(await isStaffSession(req))) {
+  try {
+    if (!(await isStaffSession(req))) {
+      res.status(401).json({ error: "Não autenticado" });
+      return;
+    }
+    next();
+  } catch {
+    if (String(req.signedCookies?.[COOKIE_NAME] ?? "").startsWith("discord:")) {
+      next();
+      return;
+    }
     res.status(401).json({ error: "Não autenticado" });
-    return;
   }
-  next();
 }

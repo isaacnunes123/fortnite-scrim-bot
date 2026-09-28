@@ -244,6 +244,20 @@ async function probeBotProcess(): Promise<ProcessProbe> {
 }
 
 async function resolveBotStatus(local?: BotStatusPayload): Promise<BotStatusPayload> {
+  try {
+    return await resolveBotStatusUnsafe(local);
+  } catch (error) {
+    console.error("[web] bot status:", error);
+    return withPresence(
+      offlineBotStatus(),
+      "unknown",
+      "none",
+      "Não foi possível ler o status do bot.",
+    );
+  }
+}
+
+async function resolveBotStatusUnsafe(local?: BotStatusPayload): Promise<BotStatusPayload> {
   if (local?.ready) {
     return withPresence(local, "online", "local");
   }
@@ -481,7 +495,9 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
       persistence === "memory"
         ? "Sem DATABASE_URL as tabelas somem a cada cold start. Crie um Neon gratuito e cole DATABASE_URL na Vercel."
         : storeRemoteError();
-    const bot = await resolveBotStatus(options.botStatus?.());
+    const bot = await resolveBotStatus(options.botStatus?.()).catch(() =>
+      withPresence(offlineBotStatus(), "unknown", "none", "Status do bot indisponível."),
+    );
     res.json({
       ok: true,
       service: "fortnite-scrim-bot",
@@ -560,10 +576,17 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
   });
 
   app.get("/api/auth/me", async (req, res) => {
-    res.json({
-      authenticated: await isStaffSession(req),
-      discordLogin: true,
-    });
+    try {
+      res.json({
+        authenticated: await isStaffSession(req),
+        discordLogin: true,
+      });
+    } catch {
+      res.json({
+        authenticated: String(req.signedCookies?.[COOKIE_NAME] ?? "").startsWith("discord:"),
+        discordLogin: true,
+      });
+    }
   });
 
   app.post("/api/auth/login", (_req, res) => {
@@ -586,7 +609,19 @@ export function registerSiteRoutes(app: Express, options: SiteRouteOptions = {})
   });
 
   app.get("/api/bot/status", requireAuth, async (_req, res) => {
-    res.json(await resolveBotStatus(options.botStatus?.()));
+    try {
+      res.json(await resolveBotStatus(options.botStatus?.()));
+    } catch (error) {
+      console.error("[web] /api/bot/status:", error);
+      res.json(
+        withPresence(
+          offlineBotStatus(),
+          "unknown",
+          "none",
+          "Não foi possível ler o status do bot. O painel continua aberto.",
+        ),
+      );
+    }
   });
 
   app.get("/api/discord/roles", requireAuth, async (_req, res) => {
